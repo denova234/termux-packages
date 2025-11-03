@@ -17,7 +17,7 @@ jobs:
       - name: Checkout repository
         uses: actions/checkout@v4
 
-      # 2️⃣ Restore previous progress if available
+      # 2️⃣ Restore previous build progress (if available)
       - name: Restore build progress
         uses: actions/download-artifact@v4
         with:
@@ -33,28 +33,35 @@ jobs:
           mkdir -p /tmp/build-progress
           echo "✅ Build environment ready for aarch64."
 
-      # 4️⃣ Run the modified build-all.sh
+      # 4️⃣ Copy repository into the expected Termux builder path
+      - name: Move repository into builder path
+        run: |
+          mkdir -p /home/builder/termux-packages
+          cp -r . /home/builder/termux-packages/
+          echo "✅ Repository copied to /home/builder/termux-packages"
+
+      # 5️⃣ Run the modified build-all.sh
       - name: Run build-all.sh
         run: |
           cd /home/builder/termux-packages
           chmod +x ./build-all.sh
           ./build-all.sh -a aarch64
 
-      # 5️⃣ Collect generated .deb packages
+      # 6️⃣ Collect generated .deb packages
       - name: Collect built packages
         if: always()
         run: |
           mkdir -p /tmp/artifacts
           find /home/builder/.termux-build/output -type f -name "*.deb" -exec cp {} /tmp/artifacts/ \; || true
 
-      # 6️⃣ Save current progress (for resume)
+      # 7️⃣ Save current progress (for resume)
       - name: Save build progress
         if: always()
         run: |
           mkdir -p /tmp/build-progress
           cp -r /home/builder/.termux-build/_buildall-aarch64 /tmp/build-progress/ || true
 
-      # 7️⃣ Upload .deb artifacts
+      # 8️⃣ Upload .deb artifacts
       - name: Upload built packages
         uses: actions/upload-artifact@v4
         with:
@@ -62,7 +69,7 @@ jobs:
           path: /tmp/artifacts
           retention-days: 7
 
-      # 8️⃣ Upload progress files for next run
+      # 9️⃣ Upload build progress for next run
       - name: Upload build progress
         uses: actions/upload-artifact@v4
         with:
