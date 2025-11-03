@@ -1,6 +1,5 @@
 name: Build Termux Packages
 
-
 on:  
   workflow_dispatch:
 
@@ -12,80 +11,86 @@ jobs:
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v4
-      - run: chmod +x scripts/run-docker.sh build-package.sh
+      
+      - name: Make scripts executable
+        run: chmod +x scripts/run-docker.sh build-package.sh
       
       - name: Build all packages with robust error handling
-  run: |
-    mkdir -p debs
-    mkdir -p build-logs
-    
-    # Get ALL package directories
-    find packages -name "build.sh" -type f | sed 's|/build.sh||' > all_packages.txt
-    find x11-packages -name "build.sh" -type f | sed 's|/build.sh||' >> all_packages.txt 2>/dev/null || true
-    find root-packages -name "build.sh" -type f | sed 's|/build.sh||' >> all_packages.txt 2>/dev/null || true
-    
-    total_packages=$(cat all_packages.txt | wc -l)
-    echo "Found $total_packages packages to build"
-    
-    # Initialize log files
-    echo "BUILD STARTED: $(date)" > build-logs/successful_packages.txt
-    echo "BUILD STARTED: $(date)" > build-logs/failed_packages.txt
-    echo "BUILD STARTED: $(date)" > build-logs/skipped_packages.txt
-    
-    successful_count=0
-    failed_count=0
-    skipped_count=0
-    processed_count=0
-    
-    # Build each package independently - NO set -e in this subshell
-    (
-    while read pkg_dir; do
-      processed_count=$((processed_count + 1))
-      pkg_name=$(basename "$pkg_dir")
-      echo "=== Building $pkg_name ($processed_count/$total_packages) ==="
-      
-      # Check if package was already built
-      if find debs -name "${pkg_name}_*.deb" | grep -q .; then
-        echo "📦 $pkg_name already built, skipping"
-        echo "$pkg_name" >> build-logs/skipped_packages.txt
-        skipped_count=$((skipped_count + 1))
-        continue
-      fi
-      
-      # Build the package with timestamp - continue even if it fails
-      start_time=$(date +%s)
-      if ./scripts/run-docker.sh ./build-package.sh -a aarch64 -i -o debs/ "$pkg_dir" 2>&1 | tee "build-logs/${pkg_name}.log"; then
-        end_time=$(date +%s)
-        build_time=$((end_time - start_time))
-        echo "✅ $pkg_name - SUCCESS (${build_time}s)"
-        echo "$pkg_name - ${build_time}s" >> build-logs/successful_packages.txt
-        successful_count=$((successful_count + 1))
-      else
-        end_time=$(date +%s)
-        build_time=$((end_time - start_time))
-        echo "❌ $pkg_name - FAILED (${build_time}s)"
-        echo "$pkg_name - ${build_time}s" >> build-logs/failed_packages.txt
-        failed_count=$((failed_count + 1))
-      fi
-      
-      # Progress update every 10 packages
-      if [ $((processed_count % 10)) -eq 0 ]; then
-        echo "📊 Progress: $processed_count/$total_packages packages processed"
-      fi
-      
-    done < all_packages.txt
-    
-    # Final summary
-    echo "BUILD COMPLETED: $(date)" >> build-logs/successful_packages.txt
-    echo "BUILD COMPLETED: $(date)" >> build-logs/failed_packages.txt
-    echo "BUILD COMPLETED: $(date)" >> build-logs/skipped_packages.txt
-    
-    echo "=== BUILD SUMMARY ==="
-    echo "✅ Successful: $successful_count packages"
-    echo "❌ Failed: $failed_count packages" 
-    echo "📦 Skipped (already built): $skipped_count packages"
-    echo "📊 Total processed: $processed_count packages"
-    )
+        run: |
+          mkdir -p debs
+          mkdir -p build-logs
+          
+          # Get ALL package directories
+          find packages -name "build.sh" -type f | sed 's|/build.sh||' > all_packages.txt
+          find x11-packages -name "build.sh" -type f | sed 's|/build.sh||' >> all_packages.txt 2>/dev/null || true
+          find root-packages -name "build.sh" -type f | sed 's|/build.sh||' >> all_packages.txt 2>/dev/null || true
+          
+          total_packages=$(cat all_packages.txt | wc -l)
+          echo "Found $total_packages packages to build"
+          
+          # Initialize log files
+          echo "BUILD STARTED: $(date)" > build-logs/successful_packages.txt
+          echo "BUILD STARTED: $(date)" > build-logs/failed_packages.txt
+          echo "BUILD STARTED: $(date)" > build-logs/skipped_packages.txt
+          
+          successful_count=0
+          failed_count=0
+          skipped_count=0
+          processed_count=0
+          
+          # Build each package independently - NO set -e in this subshell
+          (
+          while read pkg_dir; do
+            processed_count=$((processed_count + 1))
+            pkg_name=$(basename "$pkg_dir")
+            echo "=== Building $pkg_name ($processed_count/$total_packages) ==="
+            
+            # Check if package was already built
+            if find debs -name "${pkg_name}_*.deb" | grep -q .; then
+              echo "📦 $pkg_name already built, skipping"
+              echo "$pkg_name" >> build-logs/skipped_packages.txt
+              skipped_count=$((skipped_count + 1))
+              continue
+            fi
+            
+            # Build the package with timestamp - continue even if it fails
+            start_time=$(date +%s)
+            if ./scripts/run-docker.sh ./build-package.sh -a aarch64 -i -o debs/ "$pkg_dir" 2>&1 | tee "build-logs/${pkg_name}.log"; then
+              end_time=$(date +%s)
+              build_time=$((end_time - start_time))
+              echo "✅ $pkg_name - SUCCESS (${build_time}s)"
+              echo "$pkg_name - ${build_time}s" >> build-logs/successful_packages.txt
+              successful_count=$((successful_count + 1))
+            else
+              end_time=$(date +%s)
+              build_time=$((end_time - start_time))
+              echo "❌ $pkg_name - FAILED (${build_time}s)"
+              echo "$pkg_name - ${build_time}s" >> build-logs/failed_packages.txt
+              failed_count=$((failed_count + 1))
+            fi
+            
+            # Progress update every 10 packages
+            if [ $((processed_count % 10)) -eq 0 ]; then
+              echo "📊 Progress: $processed_count/$total_packages packages processed"
+              echo "✅ Successful so far: $successful_count"
+              echo "❌ Failed so far: $failed_count"
+              echo "📦 Skipped so far: $skipped_count"
+            fi
+            
+          done < all_packages.txt
+          
+          # Final summary
+          echo "BUILD COMPLETED: $(date)" >> build-logs/successful_packages.txt
+          echo "BUILD COMPLETED: $(date)" >> build-logs/failed_packages.txt
+          echo "BUILD COMPLETED: $(date)" >> build-logs/skipped_packages.txt
+          
+          echo "=== BUILD SUMMARY ==="
+          echo "✅ Successful: $successful_count packages"
+          echo "❌ Failed: $failed_count packages" 
+          echo "📦 Skipped (already built): $skipped_count packages"
+          echo "📊 Total processed: $processed_count packages"
+          echo "📋 Expected total: $total_packages packages"
+          )
       
       - name: Generate detailed report
         if: always()
@@ -93,18 +98,21 @@ jobs:
           echo "📋 DETAILED BUILD REPORT"
           echo "========================"
           echo ""
-          echo "SUCCESSFUL PACKAGES ($(cat build-logs/successful_packages.txt | grep -E '^[a-zA-Z]' | wc -l)):"
-          cat build-logs/successful_packages.txt | grep -E '^[a-zA-Z]' | sort || echo "  None"
+          echo "SUCCESSFUL PACKAGES:"
+          cat build-logs/successful_packages.txt | grep -E '^[a-zA-Z0-9]' | sort | head -20 || echo "  None"
           echo ""
-          echo "FAILED PACKAGES ($(cat build-logs/failed_packages.txt | grep -E '^[a-zA-Z]' | wc -l)):"
-          cat build-logs/failed_packages.txt | grep -E '^[a-zA-Z]' | sort || echo "  None"
+          echo "FAILED PACKAGES:"
+          cat build-logs/failed_packages.txt | grep -E '^[a-zA-Z0-9]' | sort | head -20 || echo "  None"
           echo ""
-          echo "SKIPPED PACKAGES ($(cat build-logs/skipped_packages.txt | grep -E '^[a-zA-Z]' | wc -l)):"
-          cat build-logs/skipped_packages.txt | grep -E '^[a-zA-Z]' | sort || echo "  None"
+          echo "SKIPPED PACKAGES:"
+          cat build-logs/skipped_packages.txt | grep -E '^[a-zA-Z0-9]' | sort | head -20 || echo "  None"
           echo ""
           echo "BUILD STATISTICS:"
           echo "Total .deb files built: $(find debs -name "*.deb" 2>/dev/null | wc -l)"
           echo "Total size: $(du -sh debs/ 2>/dev/null | cut -f1 || echo "0")"
+          echo ""
+          echo "First 10 built packages:"
+          ls debs/*.deb 2>/dev/null | head -10 || echo "  No packages built"
       
       - name: Upload built packages
         if: always()
@@ -119,3 +127,15 @@ jobs:
         with:
           name: build-logs
           path: build-logs/
+      
+      - name: Final status
+        if: always()
+        run: |
+          echo "🎉 Build process completed!"
+          success_count=$(find debs -name "*.deb" 2>/dev/null | wc -l)
+          echo "📦 Final count: $success_count .deb packages built"
+          if [ $success_count -eq 0 ]; then
+            echo "⚠️  No packages were built. Check the logs for errors."
+          else
+            echo "✅ Successfully built $success_count packages"
+          fi
