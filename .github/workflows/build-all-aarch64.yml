@@ -1,0 +1,71 @@
+name: Termux Build All (aarch64 only, resumable)
+
+on:
+  workflow_dispatch:  # manual start
+  push:
+    branches: [main, master]
+
+jobs:
+  build:
+    name: Build all Termux packages (aarch64)
+    runs-on: ubuntu-latest
+    container:
+      image: ghcr.io/termux/package-builder:latest
+
+    steps:
+      # 1️⃣ Checkout your repository
+      - name: Checkout repository
+        uses: actions/checkout@v4
+
+      # 2️⃣ Restore previous progress if available
+      - name: Restore build progress
+        uses: actions/download-artifact@v4
+        with:
+          name: build-progress
+          path: /home/builder/.termux-build/_buildall-aarch64
+        continue-on-error: true
+
+      # 3️⃣ Prepare build environment
+      - name: Prepare directories
+        run: |
+          mkdir -p /home/builder/.termux-build/output
+          mkdir -p /tmp/artifacts
+          mkdir -p /tmp/build-progress
+          echo "✅ Build environment ready for aarch64."
+
+      # 4️⃣ Run the modified build-all.sh
+      - name: Run build-all.sh
+        run: |
+          cd /home/builder/termux-packages
+          chmod +x ./build-all.sh
+          ./build-all.sh -a aarch64
+
+      # 5️⃣ Collect generated .deb packages
+      - name: Collect built packages
+        if: always()
+        run: |
+          mkdir -p /tmp/artifacts
+          find /home/builder/.termux-build/output -type f -name "*.deb" -exec cp {} /tmp/artifacts/ \; || true
+
+      # 6️⃣ Save current progress (for resume)
+      - name: Save build progress
+        if: always()
+        run: |
+          mkdir -p /tmp/build-progress
+          cp -r /home/builder/.termux-build/_buildall-aarch64 /tmp/build-progress/ || true
+
+      # 7️⃣ Upload .deb artifacts
+      - name: Upload built packages
+        uses: actions/upload-artifact@v4
+        with:
+          name: termux-debs-aarch64
+          path: /tmp/artifacts
+          retention-days: 7
+
+      # 8️⃣ Upload progress files for next run
+      - name: Upload build progress
+        uses: actions/upload-artifact@v4
+        with:
+          name: build-progress
+          path: /tmp/build-progress
+          retention-days: 7
