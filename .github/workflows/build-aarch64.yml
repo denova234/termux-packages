@@ -11,48 +11,101 @@ jobs:
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v4
+      - run: chmod +x scripts/run-docker.sh build-package.sh
       
-      - name: Make scripts executable
-        run: chmod +x scripts/run-docker.sh build-all.sh
-      
-      - name: Create cycle fix script
-        run: |
-          cat > /tmp/fix_cycles.py << 'EOF'
-          import sys
-          
-          with open('scripts/buildorder.py', 'r') as f:
-              content = f.read()
-          
-          # Replace the cycle exit with continuation
-          if 'sys.exit(1)' in content:
-              content = content.replace(
-                  'sys.exit(1)',
-                  'print("WARNING: Cycle detected, continuing with partial order", file=sys.stderr)'
-              )
-              with open('scripts/buildorder.py', 'w') as f:
-                  f.write(content)
-              print("Patched buildorder.py successfully")
-          else:
-              print("Could not find exit statement, file may be different")
-          EOF
-      
-      - name: Apply cycle fix
-        run: python /tmp/fix_cycles.py
-      
-      - name: Build core packages
+      - name: Build all packages with detailed logging
         run: |
           mkdir -p debs
-          for pkg in bash clang python coreutils; do
-            echo "Building $pkg..."
-            ./scripts/run-docker.sh ./build-package.sh -a aarch64 -i -o debs/ $pkg || echo "Failed $pkg, continuing..."
-          done
+          mkdir -p build-logs
+          
+          # Get ALL package directories
+          find packages -name "build.sh" -type f | sed 's|/build.sh||' > all_packages.txt
+          find x11-packages -name "build.sh" -type f | sed 's|/build.sh||' >> all_packages.txt 2>/dev/null || true
+          find root-packages -name "build.sh" -type f | sed 's|/build.sh||' >> all_packages.txt 2>/dev/null || true
+          
+          total_packages=$(cat all_packages.txt | wc -l)
+          echo "Found $total_packages packages to build"
+          
+          # Initialize log files
+          echo "BUILD STARTED: $(date)" > build-logs/successful_packages.txt
+          echo "BUILD STARTED: $(date)" > build-logs/failed_packages.txt
+          echo "BUILD STARTED: $(date)" > build-logs/skipped_packages.txt
+          
+          successful_count=0
+          failed_count=0
+          skipped_count=0
+          
+          # Build each package independently
+          while read pkg_dir; do
+            pkg_name=$(basename "$pkg_dir")
+            echo "=== Building $pkg_name ==="
+            
+            # Check if package was already built (for resume capability)
+            if find debs -name "${pkg_name}_*.deb" | grep -q .; then
+              echo "📦 $pkg_name already built, skipping"
+              echo "$pkg_name" >> build-logs/skipped_packages.txt
+              skipped_count=$((skipped_count + 1))
+              continue
+            fi
+            
+            # Build the package with timestamp
+            start_time=$(date +%s)
+            if ./scripts/run-docker.sh ./build-package.sh -a aarch64 -i -o debs/ "$pkg_dir" 2>&1 | tee "build-logs/${pkg_name}.log"; then
+              end_time=$(date +%s)
+              build_time=$((end_time - start_time))
+              echo "✅ $pkg_name - SUCCESS (${build_time}s)"
+              echo "$pkg_name - ${build_time}s" >> build-logs/successful_packages.txt
+              successful_count=$((successful_count + 1))
+            else
+              end_time=$(date +%s)
+              build_time=$((end_time - start_time))
+              echo "❌ $pkg_name - FAILED (${build_time}s)"
+              echo "$pkg_name - ${build_time}s" >> build-logs/failed_packages.txt
+              failed_count=$((failed_count + 1))
+            fi
+            
+          done < all_packages.txt
+          
+          # Final summary
+          echo "BUILD COMPLETED: $(date)" >> build-logs/successful_packages.txt
+          echo "BUILD COMPLETED: $(date)" >> build-logs/failed_packages.txt
+          echo "BUILD COMPLETED: $(date)" >> build-logs/skipped_packages.txt
+          
+          echo "=== BUILD SUMMARY ==="
+          echo "✅ Successful: $successful_count packages"
+          echo "❌ Failed: $failed_count packages" 
+          echo "📦 Skipped (already built): $skipped_count packages"
+          echo "📊 Total processed: $total_packages packages"
       
-      - name: Build all packages
+      - name: Generate detailed report
+        if: always()
         run: |
-          ./scripts/run-docker.sh ./build-all.sh -a aarch64 -i -o debs/ || echo "Build completed with some failures"
+          echo "📋 DETAILED BUILD REPORT"
+          echo "========================"
+          echo ""
+          echo "SUCCESSFUL PACKAGES ($(cat build-logs/successful_packages.txt | grep -E '^[a-zA-Z]' | wc -l)):"
+          cat build-logs/successful_packages.txt | grep -E '^[a-zA-Z]' | sort || echo "  None"
+          echo ""
+          echo "FAILED PACKAGES ($(cat build-logs/failed_packages.txt | grep -E '^[a-zA-Z]' | wc -l)):"
+          cat build-logs/failed_packages.txt | grep -E '^[a-zA-Z]' | sort || echo "  None"
+          echo ""
+          echo "SKIPPED PACKAGES ($(cat build-logs/skipped_packages.txt | grep -E '^[a-zA-Z]' | wc -l)):"
+          cat build-logs/skipped_packages.txt | grep -E '^[a-zA-Z]' | sort || echo "  None"
+          echo ""
+          echo "BUILD STATISTICS:"
+          echo "Total .deb files built: $(find debs -name "*.deb" 2>/dev/null | wc -l)"
+          echo "Total size: $(du -sh debs/ 2>/dev/null | cut -f1 || echo "0")"
       
-      - name: Upload artifacts
+      - name: Upload built packages
+        if: always()
         uses: actions/upload-artifact@v4
         with:
           name: termux-packages
           path: debs/
+      
+      - name: Upload build logs
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: build-logs
+          path: build-logs/
