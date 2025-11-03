@@ -1,0 +1,20 @@
+name: Build Termux Packages
+
+on: 
+  push: { branches: [ main ] }
+  workflow_dispatch:
+
+env:
+  TERMUX_DOCKER_USE_SUDO: ""
+
+jobs:
+  build:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - run: chmod +x scripts/run-docker.sh build-all.sh
+      - run: ./scripts/run-docker.sh ./build-all.sh -a aarch64
+      - uses: actions/upload-artifact@v4
+        with:
+          name: packages
+          path: debs/
