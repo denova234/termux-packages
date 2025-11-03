@@ -1,0 +1,42 @@
+name: Termux Build All Packages
+
+on:
+  workflow_dispatch:  # allows you to start the build manually
+  push:               # optional, run automatically when you push
+    branches:
+      - main
+      - master
+
+jobs:
+  build:
+    runs-on: ubuntu-latest
+    container:
+      image: ghcr.io/termux/package-builder:latest
+
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v4
+
+      - name: Prepare environment
+        run: |
+          cd /home/builder/termux-packages
+          ls -la
+          echo "Environment ready"
+
+      - name: Build all packages
+        run: |
+          cd /home/builder/termux-packages
+          ./scripts/run-docker.sh ./build-all.sh
+
+      - name: Save build artifacts
+        if: always()
+        run: |
+          mkdir -p /tmp/artifacts
+          find /home/builder/termux-packages/output -type f -name "*.deb" -exec cp {} /tmp/artifacts/ \;
+        continue-on-error: true
+
+      - name: Upload artifacts
+        uses: actions/upload-artifact@v4
+        with:
+          name: termux-debs
+          path: /tmp/artifacts
