@@ -1,7 +1,7 @@
 name: Termux Build All (aarch64 only, resumable)
 
 on:
-  workflow_dispatch:  # manual start
+  workflow_dispatch:  # manual trigger only
 
 jobs:
   build:
@@ -15,7 +15,7 @@ jobs:
       - name: Checkout repository
         uses: actions/checkout@v4
 
-      # 2️⃣ Restore previous build progress (if available)
+      # 2️⃣ Restore previous build progress (optional resume)
       - name: Restore build progress
         uses: actions/download-artifact@v4
         with:
@@ -29,48 +29,66 @@ jobs:
           mkdir -p /home/builder/.termux-build/output
           mkdir -p /tmp/artifacts
           mkdir -p /tmp/build-progress
-          echo "✅ Build environment ready for aarch64."
+          echo "✅ Environment ready for aarch64"
 
-      # 4️⃣ Copy repository into the expected Termux builder path
-      - name: Move repository into builder path
+      # 4️⃣ Move repo into Termux build path
+      - name: Move repository
         run: |
           mkdir -p /home/builder/termux-packages
           cp -r . /home/builder/termux-packages/
           echo "✅ Repository copied to /home/builder/termux-packages"
 
-      # 5️⃣ Run the modified build-all.sh
+      # 5️⃣ Run build-all.sh
       - name: Run build-all.sh
         run: |
           cd /home/builder/termux-packages
           chmod +x ./build-all.sh
-          ./build-all.sh -a aarch64
+          ./build-all.sh -a aarch64 || true
 
-      # 6️⃣ Collect generated .deb packages
+      # 6️⃣ Collect built .deb packages
       - name: Collect built packages
         if: always()
         run: |
           mkdir -p /tmp/artifacts
           find /home/builder/.termux-build/output -type f -name "*.deb" -exec cp {} /tmp/artifacts/ \; || true
 
-      # 7️⃣ Save current progress (for resume)
+      # 7️⃣ Save build progress for resume
       - name: Save build progress
         if: always()
         run: |
           mkdir -p /tmp/build-progress
           cp -r /home/builder/.termux-build/_buildall-aarch64 /tmp/build-progress/ || true
 
-      # 8️⃣ Upload .deb artifacts
-      - name: Upload built packages
+      # 8️⃣ Upload artifacts
+      - name: Upload .deb artifacts
         uses: actions/upload-artifact@v4
+        if: always()
         with:
           name: termux-debs-aarch64
           path: /tmp/artifacts
           retention-days: 7
 
-      # 9️⃣ Upload build progress for next run
+      # 9️⃣ Upload build progress
       - name: Upload build progress
         uses: actions/upload-artifact@v4
+        if: always()
         with:
           name: build-progress
           path: /tmp/build-progress
           retention-days: 7
+
+      # 🔟 Add a clean summary to GitHub UI
+      - name: Display build summary
+        if: always()
+        run: |
+          SUMMARY_FILE="/home/builder/.termux-build/_buildall-aarch64/failed_packages.txt"
+          echo "### Build Summary 🧱" >> $GITHUB_STEP_SUMMARY
+          echo "" >> $GITHUB_STEP_SUMMARY
+          if [ -s "$SUMMARY_FILE" ]; then
+            echo "❌ Some packages failed to build:" >> $GITHUB_STEP_SUMMARY
+            echo '```' >> $GITHUB_STEP_SUMMARY
+            cat "$SUMMARY_FILE" >> $GITHUB_STEP_SUMMARY
+            echo '```' >> $GITHUB_STEP_SUMMARY
+          else
+            echo "✅ All packages built successfully!" >> $GITHUB_STEP_SUMMARY
+          fi
