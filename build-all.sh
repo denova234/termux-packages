@@ -1,11 +1,9 @@
 #!/bin/bash
-# Enhanced build-all.sh - safe for cloud and GitHub Actions environments.
+# Enhanced build-all.sh: builds all packages (aarch64) and logs failed ones without stopping.
 
 set -e -u -o pipefail
 
 TERMUX_SCRIPTDIR=$(cd "$(realpath "$(dirname "$0")")"; pwd)
-
-# Store pid of current process for docker cleanup
 source "$TERMUX_SCRIPTDIR/scripts/utils/docker/docker.sh"; docker__create_docker_exec_pid_file
 
 if [ "$(uname -o)" = "Android" ] || [ -e "/system/bin/app_process" ]; then
@@ -13,21 +11,17 @@ if [ "$(uname -o)" = "Android" ] || [ -e "/system/bin/app_process" ]; then
     exit 1
 fi
 
-# Load local config if exists
+# Read settings
 test -f "$HOME"/.termuxrc && . "$HOME"/.termuxrc
 : ${TERMUX_TOPDIR:="$HOME/.termux-build"}
 : ${TERMUX_ARCH:="aarch64"}
 : ${TERMUX_DEBUG_BUILD:=""}
 : ${TERMUX_INSTALL_DEPS:="-s"}
-: ${TERMUX_OUTPUT_DIR:="$TERMUX_TOPDIR/output"}
+: ${TERMUX_OUTPUT_DIR:="debs/"}
 
 _show_usage() {
     echo "Usage: ./build-all.sh [-a ARCH] [-d] [-i] [-o DIR]"
-    echo "Build all packages in dependency order with resume and artifact support."
-    echo "  -a Architecture (default: aarch64)"
-    echo "  -d Build with debug symbols"
-    echo "  -i Build dependencies too"
-    echo "  -o Output directory (default: ~/.termux-build/output)"
+    echo "Build all packages. Continues on errors, logs failures."
     exit 1
 }
 
@@ -44,69 +38,72 @@ done
 shift $((OPTIND-1))
 if [ "$#" -ne 0 ]; then _show_usage; fi
 
-if [[ ! "$TERMUX_ARCH" =~ ^(all|aarch64|arm|i686|x86_64)$ ]]; then
-    echo "ERROR: Invalid arch '$TERMUX_ARCH'" >&2
+if [[ ! "$TERMUX_ARCH" =~ ^(aarch64|arm|i686|x86_64|all)$ ]]; then
+    echo "ERROR: Invalid arch '$TERMUX_ARCH'" 1>&2
     exit 1
 fi
 
-BUILDSCRIPT=$(dirname "$0")/build-package.sh
+BUILDSCRIPT=$TERMUX_SCRIPTDIR/build-package.sh
 BUILDALL_DIR=$TERMUX_TOPDIR/_buildall-$TERMUX_ARCH
 BUILDORDER_FILE=$BUILDALL_DIR/buildorder.txt
 BUILDSTATUS_FILE=$BUILDALL_DIR/buildstatus.txt
-ARTIFACT_DIR=/tmp/artifacts
+FAILED_FILE=$BUILDALL_DIR/failed_packages.txt
 
-mkdir -p "$BUILDALL_DIR" "$TERMUX_OUTPUT_DIR" "$ARTIFACT_DIR"
+mkdir -p "$BUILDALL_DIR"
+rm -f "$FAILED_FILE"
 
-# Generate build order if missing
-if [ ! -f "$BUILDORDER_FILE" ]; then
-    echo "Generating build order..."
+if [ -e "$BUILDORDER_FILE" ]; then
+    echo "Using existing buildorder file: $BUILDORDER_FILE"
+else
     "$TERMUX_SCRIPTDIR/scripts/buildorder.py" > "$BUILDORDER_FILE"
 fi
 
-# Continue from previous progress
 if [ -e "$BUILDSTATUS_FILE" ]; then
     echo "Continuing build-all from: $BUILDSTATUS_FILE"
-else
-    echo "Starting fresh build for $TERMUX_ARCH"
 fi
 
 exec > >(tee -a "$BUILDALL_DIR/ALL.out")
 exec 2> >(tee -a "$BUILDALL_DIR/ALL.err" >&2)
-trap 'echo ERROR: See $BUILDALL_DIR/${PKG}.err' ERR
+
+echo "=== Starting Termux build for architecture: $TERMUX_ARCH ==="
+START_TIME=$(date +%s)
 
 while read -r PKG PKG_DIR; do
-    # Skip already built packages
-    if [ -e "$BUILDSTATUS_FILE" ] && grep -qx "$PKG" "$BUILDSTATUS_FILE"; then
-        echo "Skipping $PKG"
+    if [ -e "$BUILDSTATUS_FILE" ] && grep -q "^$PKG\$" "$BUILDSTATUS_FILE"; then
+        echo "Skipping $PKG (already built)"
         continue
     fi
 
-    echo "------------------------------------------------------------"
     echo "Building $PKG..."
     BUILD_START=$(date +%s)
-
-    # Run package build
-    if bash -x "$BUILDSCRIPT" -a "$TERMUX_ARCH" $TERMUX_DEBUG_BUILD \
+    set +e
+    bash -x "$BUILDSCRIPT" -a "$TERMUX_ARCH" $TERMUX_DEBUG_BUILD \
         ${TERMUX_OUTPUT_DIR+-o $TERMUX_OUTPUT_DIR} $TERMUX_INSTALL_DEPS "$PKG_DIR" \
-        > "$BUILDALL_DIR/${PKG}.out" 2> "$BUILDALL_DIR/${PKG}.err"; then
+        >"$BUILDALL_DIR/${PKG}.out" 2>"$BUILDALL_DIR/${PKG}.err"
+    RESULT=$?
+    set -e
 
+    BUILD_END=$(date +%s)
+    BUILD_SECONDS=$((BUILD_END - BUILD_START))
+
+    if [ $RESULT -eq 0 ]; then
+        echo "$PKG built successfully in ${BUILD_SECONDS}s"
         echo "$PKG" >> "$BUILDSTATUS_FILE"
-        BUILD_END=$(date +%s)
-        BUILD_SECONDS=$(( BUILD_END - BUILD_START ))
-        echo "✅ $PKG built successfully in ${BUILD_SECONDS}s"
-
-        # Copy built debs to artifact folder (safe for CI)
-        find "$TERMUX_OUTPUT_DIR" -type f -name "${PKG}_*.deb" -exec cp {} "$ARTIFACT_DIR" \; || true
-
     else
-        echo "❌ Failed building $PKG (see ${PKG}.err)"
-        continue
+        echo "❌ Failed to build $PKG (exit code $RESULT)"
+        echo "$PKG" >> "$FAILED_FILE"
     fi
-
-    # Optional: periodic flush to prevent losing logs
-    sync || true
 done < "$BUILDORDER_FILE"
 
-echo "------------------------------------------------------------"
-echo "🎉 Finished building all packages for $TERMUX_ARCH"
-echo "Artifacts saved to: $ARTIFACT_DIR"
+END_TIME=$(date +%s)
+TOTAL_TIME=$((END_TIME - START_TIME))
+
+echo "=== Build process completed in ${TOTAL_TIME}s ==="
+if [ -s "$FAILED_FILE" ]; then
+    echo
+    echo "⚠️ The following packages failed to build:"
+    cat "$FAILED_FILE"
+    echo
+else
+    echo "✅ All packages built successfully!"
+fi
