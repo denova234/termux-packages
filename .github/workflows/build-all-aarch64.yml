@@ -2,8 +2,6 @@ name: Termux Build All (aarch64 only, resumable)
 
 on:
   workflow_dispatch:  # manual start
-  push:
-    branches: [main, master]
 
 jobs:
   build:
