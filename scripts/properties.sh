@@ -371,7 +371,7 @@ fi
 #
 # Default value: `Termux`
 ##
-TERMUX__NAME="Termux"
+TERMUX__NAME="NovaIDE"
 
 ##
 # The lower case value for `TERMUX__NAME`.
@@ -402,7 +402,7 @@ TERMUX__UNAME="${TERMUX__NAME^^}"
 #
 # Default value: `termux`
 ##
-TERMUX__INTERNAL_NAME="termux"
+TERMUX__INTERNAL_NAME="novaide"
 
 ##
 # The regex to validate `TERMUX__INTERNAL_NAME`.
@@ -436,7 +436,7 @@ TERMUX__INTERNAL_NAME___MAX_LEN=7
 #
 # Default value: `termux`
 ##
-TERMUX__REPOS_HOST_ORG_NAME="termux"
+TERMUX__REPOS_HOST_ORG_NAME="novaide"
 
 ##
 # Termux repositories host organization url.
@@ -1816,7 +1816,7 @@ TERMUX_APP__LNAME="${TERMUX_APP__NAME,,}"
 # Validation regex: `TERMUX__APPS_APP_IDENTIFIER_REGEX`
 # Max length: `TERMUX__APPS_APP_IDENTIFIER___MAX_LEN`
 ##
-TERMUX_APP__APP_IDENTIFIER="termux"
+TERMUX_APP__APP_IDENTIFIER="novaide"
 
 
 
