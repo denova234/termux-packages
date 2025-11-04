@@ -2,6 +2,12 @@ name: Build Termux Packages
 
 on:  
   workflow_dispatch:
+    inputs:
+      resume_from_backup:
+        description: 'Resume from latest backup?'
+        required: false
+        default: 'false'
+        type: boolean
 
 env:
   TERMUX_DOCKER_USE_SUDO: ""
@@ -15,11 +21,38 @@ jobs:
       - name: Make scripts executable
         run: chmod +x scripts/run-docker.sh build-package.sh
       
-      - name: Build all packages with robust error handling
+      - name: Download previous artifacts (if resuming)
+        if: ${{ github.event.inputs.resume_from_backup == 'true' }}
+        uses: actions/download-artifact@v4
+        with:
+          name: partial-builds
+          path: ./
+          pattern: partial-build-*
+          merge-multiple: true
+      
+      - name: Restore from backup (if resuming)
+        if: ${{ github.event.inputs.resume_from_backup == 'true' }}
         run: |
-          mkdir -p debs
-          mkdir -p build-logs
-          
+          # Find the most recent backup
+          latest_backup=$(ls -t partial-build-*.tar.gz 2>/dev/null | head -1)
+          if [ -n "$latest_backup" ]; then
+            echo "🔄 Restoring from backup: $latest_backup"
+            tar -xzf "$latest_backup"
+            echo "✅ Restored previous progress"
+            echo "📦 Previously built packages: $(find debs -name "*.deb" 2>/dev/null | wc -l)"
+          else
+            echo "❌ No backup found, starting fresh"
+            mkdir -p debs build-logs
+          fi
+      
+      - name: Initialize fresh build (if not resuming)
+        if: ${{ github.event.inputs.resume_from_backup != 'true' }}
+        run: |
+          mkdir -p debs build-logs
+          echo "🚀 Starting fresh build"
+      
+      - name: Build all packages with periodic saving
+        run: |
           # Get ALL package directories
           find packages -name "build.sh" -type f | sed 's|/build.sh||' > all_packages.txt
           find x11-packages -name "build.sh" -type f | sed 's|/build.sh||' >> all_packages.txt 2>/dev/null || true
@@ -28,32 +61,57 @@ jobs:
           total_packages=$(cat all_packages.txt | wc -l)
           echo "Found $total_packages packages to build"
           
-          # Initialize log files
-          echo "BUILD STARTED: $(date)" > build-logs/successful_packages.txt
-          echo "BUILD STARTED: $(date)" > build-logs/failed_packages.txt
-          echo "BUILD STARTED: $(date)" > build-logs/skipped_packages.txt
+          # Initialize log files if they don't exist
+          [ -f build-logs/successful_packages.txt ] || echo "BUILD STARTED: $(date)" > build-logs/successful_packages.txt
+          [ -f build-logs/failed_packages.txt ] || echo "BUILD STARTED: $(date)" > build-logs/failed_packages.txt
+          [ -f build-logs/skipped_packages.txt ] || echo "BUILD STARTED: $(date)" > build-logs/skipped_packages.txt
           
-          successful_count=0
-          failed_count=0
-          skipped_count=0
-          processed_count=0
+          # Count current progress
+          successful_count=$(cat build-logs/successful_packages.txt 2>/dev/null | grep -E '^[a-zA-Z0-9]' | wc -l || echo 0)
+          failed_count=$(cat build-logs/failed_packages.txt 2>/dev/null | grep -E '^[a-zA-Z0-9]' | wc -l || echo 0)
+          skipped_count=$(cat build-logs/skipped_packages.txt 2>/dev/null | grep -E '^[a-zA-Z0-9]' | wc -l || echo 0)
+          processed_count=$((successful_count + failed_count + skipped_count))
           
-          # Build each package independently - NO set -e in this subshell
+          echo "📊 Resuming from: $processed_count packages already processed"
+          echo "✅ Previously successful: $successful_count"
+          echo "❌ Previously failed: $failed_count"
+          echo "📦 Previously skipped: $skipped_count"
+          
+          # Function to save progress
+          save_progress() {
+            echo "💾 Saving progress... ($(find debs -name "*.deb" 2>/dev/null | wc -l) packages built so far)"
+            tar -czf partial-build-$(date +%Y%m%d-%H%M%S).tar.gz debs/ build-logs/ all_packages.txt
+            echo "✅ Progress saved at $(date)"
+          }
+          
+          # Build each package independently
           (
+          last_save_time=$(date +%s)
+          build_start_time=$(date +%s)
+          
           while read pkg_dir; do
-            processed_count=$((processed_count + 1))
             pkg_name=$(basename "$pkg_dir")
-            echo "=== Building $pkg_name ($processed_count/$total_packages) ==="
+            
+            # Skip if already processed (successful, failed, or skipped)
+            if grep -q "^$pkg_name" build-logs/successful_packages.txt 2>/dev/null || \
+               grep -q "^$pkg_name" build-logs/failed_packages.txt 2>/dev/null || \
+               grep -q "^$pkg_name" build-logs/skipped_packages.txt 2>/dev/null; then
+              processed_count=$((processed_count + 1))
+              continue
+            fi
             
             # Check if package was already built
             if find debs -name "${pkg_name}_*.deb" | grep -q .; then
               echo "📦 $pkg_name already built, skipping"
               echo "$pkg_name" >> build-logs/skipped_packages.txt
               skipped_count=$((skipped_count + 1))
+              processed_count=$((processed_count + 1))
               continue
             fi
             
-            # Build the package with timestamp - continue even if it fails
+            echo "=== Building $pkg_name ($processed_count/$total_packages) ==="
+            
+            # Build the package with timestamp
             start_time=$(date +%s)
             if ./scripts/run-docker.sh ./build-package.sh -a aarch64 -i -o debs/ "$pkg_dir" 2>&1 | tee "build-logs/${pkg_name}.log"; then
               end_time=$(date +%s)
@@ -69,12 +127,26 @@ jobs:
               failed_count=$((failed_count + 1))
             fi
             
+            processed_count=$((processed_count + 1))
+            
+            # Save progress every 30 minutes or every 20 packages
+            current_time=$(date +%s)
+            time_since_save=$((current_time - last_save_time))
+            if [ $time_since_save -gt 1800 ] || [ $((processed_count % 20)) -eq 0 ]; then
+              save_progress
+              last_save_time=$(date +%s)
+            fi
+            
             # Progress update every 10 packages
             if [ $((processed_count % 10)) -eq 0 ]; then
+              current_time=$(date +%s)
+              elapsed_minutes=$(( (current_time - build_start_time) / 60 ))
               echo "📊 Progress: $processed_count/$total_packages packages processed"
-              echo "✅ Successful so far: $successful_count"
-              echo "❌ Failed so far: $failed_count"
-              echo "📦 Skipped so far: $skipped_count"
+              echo "✅ Successful: $successful_count"
+              echo "❌ Failed: $failed_count"
+              echo "📦 Skipped: $skipped_count"
+              echo "⏰ Time elapsed: ${elapsed_minutes}m"
+              echo "⏱️  Estimated time remaining: $(( (total_packages - processed_count) * elapsed_minutes / processed_count ))m"
             fi
             
           done < all_packages.txt
@@ -87,39 +159,26 @@ jobs:
           echo "=== BUILD SUMMARY ==="
           echo "✅ Successful: $successful_count packages"
           echo "❌ Failed: $failed_count packages" 
-          echo "📦 Skipped (already built): $skipped_count packages"
+          echo "📦 Skipped: $skipped_count packages"
           echo "📊 Total processed: $processed_count packages"
           echo "📋 Expected total: $total_packages packages"
           )
       
-      - name: Generate detailed report
+      - name: Upload periodic saves
         if: always()
-        run: |
-          echo "📋 DETAILED BUILD REPORT"
-          echo "========================"
-          echo ""
-          echo "SUCCESSFUL PACKAGES:"
-          cat build-logs/successful_packages.txt | grep -E '^[a-zA-Z0-9]' | sort | head -20 || echo "  None"
-          echo ""
-          echo "FAILED PACKAGES:"
-          cat build-logs/failed_packages.txt | grep -E '^[a-zA-Z0-9]' | sort | head -20 || echo "  None"
-          echo ""
-          echo "SKIPPED PACKAGES:"
-          cat build-logs/skipped_packages.txt | grep -E '^[a-zA-Z0-9]' | sort | head -20 || echo "  None"
-          echo ""
-          echo "BUILD STATISTICS:"
-          echo "Total .deb files built: $(find debs -name "*.deb" 2>/dev/null | wc -l)"
-          echo "Total size: $(du -sh debs/ 2>/dev/null | cut -f1 || echo "0")"
-          echo ""
-          echo "First 10 built packages:"
-          ls debs/*.deb 2>/dev/null | head -10 || echo "  No packages built"
+        uses: actions/upload-artifact@v4
+        with:
+          name: partial-builds
+          path: partial-build-*.tar.gz
+          retention-days: 30
       
-      - name: Upload built packages
+      - name: Upload final built packages
         if: always()
         uses: actions/upload-artifact@v4
         with:
           name: termux-packages
           path: debs/
+          retention-days: 30
       
       - name: Upload build logs
         if: always()
@@ -127,15 +186,23 @@ jobs:
         with:
           name: build-logs
           path: build-logs/
+          retention-days: 30
       
       - name: Final status
         if: always()
         run: |
-          echo "🎉 Build process completed!"
+          echo "🎉 Build process completed or interrupted!"
           success_count=$(find debs -name "*.deb" 2>/dev/null | wc -l)
-          echo "📦 Final count: $success_count .deb packages built"
-          if [ $success_count -eq 0 ]; then
-            echo "⚠️  No packages were built. Check the logs for errors."
+          partial_saves=$(ls partial-build-*.tar.gz 2>/dev/null | wc -l)
+          echo "📦 Packages built: $success_count .deb files"
+          echo "💾 Backup files created: $partial_saves"
+          echo "📊 Total packages processed: $(cat build-logs/successful_packages.txt build-logs/failed_packages.txt build-logs/skipped_packages.txt 2>/dev/null | grep -E '^[a-zA-Z0-9]' | wc -l || echo 0)"
+          
+          if [ $success_count -gt 0 ]; then
+            echo "✅ Success! You can download the packages from the Artifacts section."
+            if [ $partial_saves -gt 0 ]; then
+              echo "🔄 To continue building, run this workflow again with 'Resume from backup' = true"
+            fi
           else
-            echo "✅ Successfully built $success_count packages"
+            echo "⚠️  No packages were built. Check the logs for errors."
           fi
