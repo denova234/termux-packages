@@ -1,0 +1,38 @@
+name: Build Termux Bootstraps
+
+on:
+  workflow_dispatch:
+  
+jobs:
+  build-bootstraps:
+    name: Build Bootstraps
+    runs-on: ubuntu-latest
+    
+    steps:
+    - name: Checkout termux-packages
+      uses: actions/checkout@v4
+      with:
+        repository: termux/termux-packages
+        ref: master
+        
+    - name: Build using Docker
+      run: |
+        # Ensure Docker is running
+        sudo systemctl start docker || true
+        
+        # Build the Docker image if needed (run-docker.sh usually handles this)
+        if [ -f "scripts/run-docker.sh" ]; then
+          chmod +x scripts/run-docker.sh
+          ./scripts/run-docker.sh ./scripts/build-bootstraps.sh
+        else
+          echo "run-docker.sh not found, trying direct docker approach"
+          docker build -t termux-build .
+          docker run --rm -v $(pwd):/data termux-build ./scripts/build-bootstraps.sh
+        fi
+        
+    - name: Upload artifacts
+      uses: actions/upload-artifact@v4
+      with:
+        name: termux-bootstraps
+        path: bootstrap-*.zip
+        retention-days: 30
