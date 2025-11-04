@@ -27,7 +27,7 @@ jobs:
         else
           echo "run-docker.sh not found, trying direct docker approach"
           docker build -t termux-build .
-          docker run --rm -v $(pwd):/data termux-build ./scripts/build-bootstraps.sh --architectures aarch64 -a proot-distro
+          docker run --rm -v $(pwd):/data termux-build ./scripts/build-bootstraps.sh --architectures aarch64 -a proot-distro -f
         fi
         
     - name: Upload artifacts
