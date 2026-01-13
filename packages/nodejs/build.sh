@@ -2,9 +2,9 @@ TERMUX_PKG_HOMEPAGE=https://nodejs.org/
 TERMUX_PKG_DESCRIPTION="Open Source, cross-platform JavaScript runtime environment"
 TERMUX_PKG_LICENSE="MIT"
 TERMUX_PKG_MAINTAINER="Yaksh Bariya <thunder-coding@termux.dev>"
-TERMUX_PKG_VERSION=24.9.0
+TERMUX_PKG_VERSION=25.2.1
 TERMUX_PKG_SRCURL=https://nodejs.org/dist/v${TERMUX_PKG_VERSION}/node-v${TERMUX_PKG_VERSION}.tar.xz
-TERMUX_PKG_SHA256=f17bc4cb01f59098c34a288c1bb109a778867c14eeb0ebbd608d0617b1193bbf
+TERMUX_PKG_SHA256=aa7c4ac1076dc299a8949b8d834263659b2408ec0e5bba484673a8ce0766c8b9
 # thunder-coding: don't try to autoupdate nodejs, that thing takes 2 whole hours to build for a single arch, and requires a lot of patch updates everytime. Also I run tests everytime I update it to ensure least bugs
 TERMUX_PKG_AUTO_UPDATE=false
 # Note that we do not use a shared libuv to avoid an issue with the Android
@@ -28,13 +28,13 @@ termux_step_host_build() {
 	######
 	# Do host-build of ICU, which is required for nodejs
 	######
-	local ICU_VERSION=76.1
-	local ICU_TAR=icu4c-${ICU_VERSION//./_}-src.tgz
-	local ICU_DOWNLOAD=https://github.com/unicode-org/icu/releases/download/release-${ICU_VERSION//./-}/$ICU_TAR
+	local ICU_VERSION=78.1
+	local ICU_TAR=icu4c-${ICU_VERSION}-sources.tgz
+	local ICU_DOWNLOAD=https://github.com/unicode-org/icu/releases/download/release-${ICU_VERSION}/$ICU_TAR
 	termux_download \
 		$ICU_DOWNLOAD\
 		$TERMUX_PKG_CACHEDIR/$ICU_TAR \
-		dfacb46bfe4747410472ce3e1144bf28a102feeaa4e3875bac9b4c6cf30f4f3e
+		6217f58ca39b23127605cfc6c7e0d3475fe4b0d63157011383d716cb41617886
 	tar xf $TERMUX_PKG_CACHEDIR/$ICU_TAR
 	cd icu/source
 	export CC="$TERMUX_HOST_LLVM_BASE_DIR/bin/clang"
@@ -71,8 +71,8 @@ termux_step_host_build() {
 	#  'bucket': 'chromium-browser-clang',
 	#  'objects': [
 	#    {
-	#      'object_name': 'Linux_x64/clang-llvmorg-21-init-5118-g52cd27e6-5.tar.xz',
-	#      'sha256sum': '790fcc5b04e96882e8227ba7994161ab945c0e096057fc165a0f71e32a7cb061',
+	#      'object_name': 'Linux_x64/clang-llvmorg-21-init-9266-g09006611-1.tar.xz',
+	#      'sha256sum': '2cccd3a5b04461f17a2e78d2f8bd18b448443a9dd4d6dfac50e8e84b4d5176f1',
 	#      'size_bytes': 54517328,
 	#      'generation': 1742541959624765,
 	#      'condition': 'host_os == "linux"',
@@ -87,8 +87,8 @@ termux_step_host_build() {
 	# llvm-project directory.
 	#
 	# Also the sha256sum is the hash of the tarball, which we can directly use
-	local LLVM_TAR="clang-llvmorg-21-init-5118-g52cd27e6-5.tar.xz"
-	local LLVM_TAR_HASH=790fcc5b04e96882e8227ba7994161ab945c0e096057fc165a0f71e32a7cb061
+	local LLVM_TAR="clang-llvmorg-21-init-9266-g09006611-1.tar.xz"
+	local LLVM_TAR_HASH=2cccd3a5b04461f17a2e78d2f8bd18b448443a9dd4d6dfac50e8e84b4d5176f1
 	cd $TERMUX_PKG_HOSTBUILD_DIR
 	mkdir llvm-project-build
 	termux_download \
@@ -139,7 +139,16 @@ termux_step_configure() {
 		export CXX_host="$TERMUX_PKG_HOSTBUILD_DIR/llvm-project-build/bin/clang++ -m32"
 		export LINK_host="$TERMUX_PKG_HOSTBUILD_DIR/llvm-project-build/bin/clang++ -m32"
 	fi
-	LDFLAGS+=" -ldl"
+	# Although without any configuration at all GYP builds both out/Release/ and out/Debug/
+	# with build.ninja, it is incorrect to use the other directory as configure.py passes
+	# a build_type variable to GYP which it uses to detect release/debug builds which is
+	# used in some places to do some debug build specific stuff.
+	# An example of such errors is the builds failing due to undefined symbols of some
+	# generated source files that happen only in debug builds
+	local _DEBUG=()
+	if [ "${TERMUX_DEBUG_BUILD}" = "true" ]; then
+		_DEBUG+=("--debug")
+	fi
 	# See note above TERMUX_PKG_DEPENDS why we do not use a shared libuv.
 	# When building with ninja, build.ninja is generated for both Debug and Release builds.
 	./configure \
@@ -152,7 +161,8 @@ termux_step_configure() {
 		--shared-zlib \
 		--with-intl=system-icu \
 		--cross-compiling \
-		--ninja
+		--ninja \
+		"${_DEBUG[@]}"
 
 	export LD_LIBRARY_PATH=$TERMUX_PKG_HOSTBUILD_DIR/icu-installed/lib
 	sed -i \

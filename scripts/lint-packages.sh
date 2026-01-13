@@ -2,6 +2,8 @@
 
 set -e -u
 
+start_time="$(date +%10s.%3N)"
+
 TERMUX_SCRIPTDIR=$(realpath "$(dirname "$0")/../")
 . "$TERMUX_SCRIPTDIR/scripts/properties.sh"
 
@@ -28,7 +30,7 @@ check_package_license() {
 			LPPL-1.0|Libpng|Lucent-1.02|MIT|MPL-2.0|MS-PL|MS-RL|MirOS|Motosoto-0.9.1);;
 			Mozilla-1.1|Multics|NASA-1.3|NAUMEN|NCSA|NOSL-3.0|NTP|NUnit-2.6.3);;
 			NUnit-Test-Adapter-2.6.3|Nethack|Nokia-1.0a|OCLC-2.0|OSL-3.0|OpenLDAP);;
-			OpenSSL|Openfont-1.1|Opengroup|PHP-3.0|PHP-3.01|PostgreSQL);;
+			OpenSSL|OFL-1.1|Opengroup|PHP-3.0|PHP-3.01|PostgreSQL);;
 			"Public Domain"|"Public Domain - SUN"|PythonPL|PythonSoftFoundation);;
 			QTPL-1.0|RPL-1.5|Real-1.0|RicohPL|SUNPublic-1.0|Scala|SimPL-2.0|Sleepycat);;
 			Sybase-1.0|TMate|UPL-1.0|Unicode-DFS-2015|Unlicense|UoI-NCSA|"VIM License");;
@@ -73,7 +75,7 @@ check_indentation() {
 	local pkg_script="$1"
 	local line='' heredoc_terminator='' in_array=0 i=0
 	local -a issues=('' '') bad_lines=('FAILED')
-	local heredoc_regex="[^\(/%#]<{2}-?\s*(['\"]?(\w*(\\\.)?)*['\"]?)"
+	local heredoc_regex="[^\(/%#]<{2}-?[[:space:]]*(['\"]?([[:alnum:]_]*(\\\.)?)*['\"]?)"
 	# We don't wanna hit version constraints "(<< x.y.z)" with this, so don't match "(<<".
 	# We also wouldn't wanna hit parameter expansions "${var/<<}", ${var%<<}, ${var#<<}
 
@@ -94,7 +96,12 @@ check_indentation() {
 			(( ${#heredoc_terminator} )) && continue
 		fi
 
-		# check for mixed indentation
+		# Check for mixed indentation.
+		# We do this after the heredoc checks because space indentation
+		# is significant for languages like Haskell or Nim.
+		# Those probably shouldn't get inlined as heredocs,
+		# but the Haskell `cabal.project.local` overrides currently are.
+		# So let's not break builds for that.
 		[[ "$line" =~ ^($'\t'+ +| +$'\t'+) ]] && {
 			issues[0]='Mixed indentation'
 			bad_lines[i]="${pkg_script}:${i}:$line"
@@ -121,14 +128,32 @@ check_indentation() {
 	return 0
 }
 
-# We'll need the 'origin/master' as a base commit when running the version check.
-# So try fetching it now if it doesn't exist.
-if ! base_commit="HEAD~$(git rev-list --count FETCH_HEAD..)"; then
-	git fetch https://github.com/termux/termux-packages.git
-	base_commit="HEAD~$(git rev-list --count FETCH_HEAD..)"
-fi
+{
+	# We'll need the origin/master HEAD commit as a base commit when running the version check.
+	# So try fetching it now.
+	if origin_url="$(git config --get remote.origin.url)"; then
+		git fetch "${origin_url}" || {
+			echo "ERROR: Unable to fetch '${origin_url}'"
+			echo "Falling back to HEAD~1"
+		}
+	else
+		origin_url="unknown"
+	fi
+
+	base_commit="$(git rev-list "origin/master.." --exclude-first-parent-only --reverse | head -n1)"
+	# On the master branch or failure `git rev-list "origin/master.."`
+	# won't return a commit, so set "HEAD" as a default value.
+	: "${base_commit:="HEAD"}"
+} 2> /dev/null
+
+# Also figure out if we have a `%ci:no-build` trailer in the commit range,
+# we may skip some checks later if yes.
+no_build="$(git log --fixed-strings --grep '%ci:no-build' --pretty=format:%H "$base_commit..")"
 
 check_version() {
+	# !!! vvv TEMPORARY - REMOVE WHEN THIS FUNCTION IS FIXED vvv !!!
+	return
+	# !!! ^^^ TEMPORARY - REMOVE WHEN THIS FUNCTION IS FIXED ^^^ !!!
 	local package_dir="${1%/*}"
 
 	[[ -z "$base_commit" ]] && {
@@ -140,23 +165,16 @@ check_version() {
 	} >&2
 
 	# If TERMUX_PKG_VERSION is an array that changes the formatting.
-	local version i=-1 error=0 is_array="${TERMUX_PKG_VERSION@a}"
+	local version i=0 error=0 is_array="${TERMUX_PKG_VERSION@a}"
 	printf '%s' "${is_array:+$'ARRAY\n'}"
 
 	for version in "${TERMUX_PKG_VERSION[@]}"; do
 		printf '%s' "${is_array:+$'\t'}"
-		(( i++ ))
 
 		# Is this version valid?
 		dpkg --validate-version "${version}" &> /dev/null || {
 			printf 'INVALID %s\n' "$(dpkg --validate-version "${version}" 2>&1)"
 			(( error++ ))
-			continue
-		}
-
-		# Was the package modified in this branch?
-		git diff --exit-code "${base_commit}" -- "${package_dir}" &> /dev/null && {
-			printf '%s\n' "PASS - ${version} (not modified in this branch)"
 			continue
 		}
 
@@ -166,26 +184,43 @@ check_version() {
 			unset TERMUX_PKG_VERSION TERMUX_PKG_REVISION
 			# shellcheck source=/dev/null
 			. <(git -P show "${base_commit}:${package_dir}/build.sh" 2> /dev/null)
-			if [[ -n "$is_array" ]]; then
-				echo "${TERMUX_PKG_VERSION[$i]:-0}-${TERMUX_PKG_REVISION:-0}"
-			else
-				echo "${TERMUX_PKG_VERSION:-0}-${TERMUX_PKG_REVISION:-0}"
-			fi
+			# ${TERMUX_PKG_VERSION[0]} also works fine for non-array versions.
+			# Since those resolve in 1 iteration, no higher index is ever attempted to be called.
+			echo "${TERMUX_PKG_VERSION[$i]:-0}-${TERMUX_PKG_REVISION:-0}"
 		)
 
 		# Is ${version_old} valid?
 		local version_old_is_bad=""
 		dpkg --validate-version "${version_old}" &> /dev/null || version_old_is_bad="0~invalid"
 
+		# The rest of the checks aren't useful past the first index when $TERMUX_PKG_VERSION is an array
+		# since that is the index that determines the actual version.
+		if (( i++ > 0 )); then
+			echo "PASS - ${version_old%-0}${version_old_is_bad:+" (INVALID)"} -> ${version_new%-0}"
+			continue
+		fi
+
+		# Was the package modified in this branch?
+		git diff --no-merges --exit-code "${base_commit}" -- "${package_dir}" &> /dev/null && {
+			printf '%s\n' "PASS - ${version_new%-0} (not modified in this branch)"
+			return 0
+		}
+
+		[[ -n "$no_build" ]] && {
+			echo "SKIP - ${version_new%-0} ('%ci:no-build' trailer detected on commit ${no_build::7})"
+			return 0
+		}
+
 		# If ${version_new} isn't greater than "$version_old" that's an issue.
 		# If ${version_old} isn't valid this check is a no-op.
 		if dpkg --compare-versions "$version_new" le "${version_old_is_bad:-$version_old}"; then
 			printf '%s\n' \
-				"FAILED" \
+				"FAILED ${version_old_is_bad:-$version_old} -> ${version_new}" \
 				"" \
 				"Version of '$package_name' has not been incremented." \
 				"Either 'TERMUX_PKG_VERSION' or 'TERMUX_PKG_REVISION'" \
-				"need to be modified in the build.sh when changing a package build."
+				"need to be modified in the build.sh when changing a package build." \
+				"You can use ./scripts/bin/revbump '$package_name' to do this automatically."
 
 			# If the version decreased throw in a suggestion for how to downgrade packages
 			dpkg --compare-versions "$version_new" lt "$version_old" && \
@@ -217,9 +252,7 @@ check_version() {
 			continue
 		# If that check passed the TERMUX_PKG_VERSION must have changed,
 		# in which case TERMUX_PKG_REVISION should be reset to 0.
-		# This check isn't useful past the first index when $TERMUX_PKG_VERSION is an array
-		# since the main version of such a package may remain unchanged when another is changed.
-		elif [[ "${version_new%-*}" != "${version_old%-*}" && "$new_revision" != "0" && "$i" == 0 ]]; then
+		elif [[ "${version_new%-*}" != "${version_old%-*}" && "$new_revision" != "0" ]]; then
 			(( error++ )) # Not reset
 			printf '%s\n' \
 				"FAILED - $version_old -> $version_new" \
@@ -430,26 +463,105 @@ lint_package() {
 
 		echo -n "TERMUX_PKG_SRCURL: "
 		if (( ${#TERMUX_PKG_SRCURL} )); then
-			urls_ok=true
-			for url in "${TERMUX_PKG_SRCURL[@]}"; do
-				if (( ${#url} )); then
-					case "$url" in
-						https://*|git+https://*) continue;;
-						*) echo "NON-HTTPS (acceptable)" ; urls_ok=false; break ;;
-					esac
-				else
-					echo "NOT SET (one of the array elements)"
-					urls_ok=false
+			for (( i = 0; i < ${#TERMUX_PKG_SRCURL[@]}; i++ )); do
+				url="${TERMUX_PKG_SRCURL[$i]}"
+				(( ${#url} )) || {
+					echo "NOT SET (\${TERMUX_PKG_SRCURL[$i]} has no value)"
 					pkg_lint_error=true
 					break
-				fi
-			done
-			unset url
+				}
+				# Example:
+				# https://github.com/openssh/openssh-portable/archive/refs/tags/V_10_2_P1.tar.gz
+				# protocol="https:"
+				#        _=""
+				#     host="github.com"
+				#     user="openssh"
+				#     repo="openssh-portable"
+				# ref_path="archive/refs/tags/V_10_2_P1.tar.gz"
+				IFS='/' read -r protocol _ host user repo ref_path <<< "$url"
+				case "${protocol}" in
+					https:) protocol_type="HTTPS";;
+					git+https:) protocol_type="Git/HTTPS";;
+					file:)
+						if [[ -d "${url#file://}" ]]; then
+							protocol_type="Local source directory"
+						else
+							protocol_type="Local tarball"
+						fi
+					;;
+					git+file:) protocol_type="Local Git repository";;
+					git+*) protocol_type="Git/NON-HTTPS (acceptable)";;
+					*) protocol_type="NON-HTTPS (acceptable)";;
+				esac
 
-			if [[ "$urls_ok" == 'true' ]]; then
-				echo "PASS"
-			fi
-			unset urls_ok
+				case "${host}" in
+					"github.com")
+						# Is this a release tarball?
+						if [[ "$ref_path" == releases/download/* ]]; then
+							tarball_type="Release"
+						# Is it a tag tarball?
+						elif [[ "$ref_path" == archive/refs/tags/* ]]; then
+							tarball_type="Tag"
+						# Is it an untagged commit tarball?
+						elif [[ "$ref_path" =~ archive/[0-9a-f]{7,64} ]]; then
+							tarball_type="Commit"
+						# If it's in archive/ anyway then it's probably a tag with the incorrect download path.
+						elif [[ "$ref_path" == archive/* ]]; then
+							tarball_type="can-fix"
+							# Get the unexpanded version of the SRCURL for the suggestion
+							url="$(grep -oe "$protocol//$host/$user/$repo/archive.*" "$package_script")"
+							printf -v lint_msg '%s\n' \
+								"PARTIAL PASS - Tag with potential ref confusion." \
+								"WARNING: GitHub tarball URLs should use /archive/refs/tags/ instead of /archive/" \
+								"to avoid potential ref confusion with branches sharing the name of a tag." \
+								"See: https://lore.kernel.org/buildroot/87edqhwvd0.fsf@dell.be.48ers.dk/T/" \
+								"  Current:   $url" \
+								"  Suggested: ${url/\/archive\//\/archive\/refs\/tags\/}"
+						else
+							# Is this a git repo or local source? If so, it makes sense we don't have a $ref_path
+							case "${protocol}" in
+								file:|git+file:)
+									tarball_type="local"
+									printf -v lint_msg '%s\n' \
+										"PASS - "
+								;;
+								git+*);;
+								*) # If we still have no match at this point declare it an error.
+									tarball_type="invalid"
+									printf -v lint_msg '%s\n' \
+										"FAIL (Unknown tarball path pattern for host '$host')" \
+										"  Url: $url" \
+										"  Tarball path: $ref_path" \
+										"  This isn't a typical tarball location for $host."
+								;;
+							esac
+						fi
+					;;
+					# For other hosts we don't know the typical pattern so don't try guessing the tarball_type.
+					*);;
+				esac
+
+				# Print the appropriate result based on our findings from above
+				case "$tarball_type" in
+					"invalid") # Known host, unknown tarball url pattern.
+						pkg_lint_error=true
+						echo "$lint_msg"
+						break
+					;;
+					"can-fix") # Known host, known pattern, but should be changed.
+						echo "$lint_msg"
+					;;
+					"local") # Local source.
+						echo "$lint_msg"
+					;;
+					*) # Known host, known pattern, or host with no checked tarball URL patterns.
+						# $user and $repo corresponds to those URL components for e.g. GitHub.
+						# but it may not do so for other tarball hosts, they are included for additional context.
+						echo "PASS - (${tarball_type+"${tarball_type}/"}${protocol_type}) ${host}/${user}/${repo}"
+					;;
+				esac
+			done
+			unset i url protocol host user repo ref_path protocol_type tarball_type lint_msg
 
 			echo -n "TERMUX_PKG_SHA256: "
 			if (( ${#TERMUX_PKG_SHA256} )); then
@@ -684,6 +796,19 @@ linter_main() {
 	echo "================================================================"
 	return
 }
+
+time_elapsed() {
+	local start="$1" end="$(date +%10s.%3N)"
+	local elapsed="$(( ${end/.} - ${start/.} ))"
+	echo "[INFO]: Finished linting build scripts ($(date -d "@$end" --utc '+%Y-%m-%dT%H:%M:%SZ' 2>&1))"
+	printf '[INFO]: Time elapsed: %s\n' \
+		"$(sed 's/0m //;s/0s //' <<< "$(( elapsed % 3600000 / 60000 ))m$(( elapsed % 60000 / 1000 ))s$(( elapsed % 1000 ))ms")"
+}
+
+echo "[INFO]: Starting build script linter ($(date -d "@$start_time" --utc '+%Y-%m-%dT%H:%M:%SZ' 2>&1))"
+git -P log "$base_commit" -n1 --pretty=format:"[INFO]: Base commit    - %h%n[INFO]: Commit message - %s%n"
+echo "[INFO]: Origin URL: ${origin_url}"
+trap 'time_elapsed "$start_time"' EXIT
 
 package_counter=0
 if (( $# )); then

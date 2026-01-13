@@ -3,7 +3,7 @@ TERMUX_PKG_DESCRIPTION="Libc for WebAssembly programs built on top of WASI syste
 TERMUX_PKG_LICENSE="Apache-2.0, BSD 2-Clause, MIT"
 TERMUX_PKG_LICENSE_FILE="LICENSE, src/wasi-libc/LICENSE-MIT, src/wasi-libc/libc-bottom-half/cloudlibc/LICENSE"
 TERMUX_PKG_MAINTAINER="@termux"
-TERMUX_PKG_VERSION="27"
+TERMUX_PKG_VERSION="29"
 TERMUX_PKG_SRCURL=git+https://github.com/WebAssembly/wasi-sdk
 TERMUX_PKG_GIT_BRANCH=wasi-sdk-${TERMUX_PKG_VERSION}
 TERMUX_PKG_RECOMMENDS="wasm-component-ld"
@@ -14,23 +14,11 @@ TERMUX_PKG_HOSTBUILD=true
 TERMUX_PKG_AUTO_UPDATE=true
 TERMUX_PKG_UPDATE_VERSION_REGEXP="\d+"
 
-termux_pkg_auto_update() {
-	local api_url="https://api.github.com/repos/WebAssembly/wasi-sdk/git/refs/tags"
-	local latest_refs_tags=$(curl -s "${api_url}" | jq .[].ref | grep -oP wasi-sdk-${TERMUX_PKG_UPDATE_VERSION_REGEXP})
-	if [[ -z "${latest_refs_tags}" ]]; then
-		echo "WARN: Unable to get latest refs tags from upstream. Try again later." >&2
-		return
-	fi
-	local latest_version=$(echo "${latest_refs_tags}" | sort -V | tail -n1)
-	termux_pkg_upgrade_version "${latest_version}"
-}
-
 termux_step_post_get_source() {
 	# match "clang -print-resource-dir"
-	local LLVM_MAJOR_VERSION=$(. $TERMUX_SCRIPTDIR/packages/libllvm/build.sh; echo $LLVM_MAJOR_VERSION)
 	local p="${TERMUX_PKG_BUILDER_DIR}/0001-move-clang-resource-dir.diff"
 	echo "Applying patch: $(basename "${p}")"
-	sed "s|@LLVM_MAJOR_VERSION@|${LLVM_MAJOR_VERSION}|g" "${p}" \
+	sed "s|@LLVM_MAJOR_VERSION@|${TERMUX_LLVM_MAJOR_VERSION}|g" "${p}" \
 		| patch -p1 --silent
 }
 
@@ -70,11 +58,11 @@ termux_step_host_build() {
 	mv -v "${TERMUX_PKG_HOSTBUILD_DIR}"/install/share/cmake/Platform/*.cmake "${TERMUX_PREFIX}/share/cmake/Platform/"
 	mv -v "${TERMUX_PKG_HOSTBUILD_DIR}"/install/share/cmake/*.cmake "${TERMUX_PREFIX}/share/cmake/"
 
-	local LLVM_MAJOR_VERSION_UPSTREAM=$(grep llvm-version "${TERMUX_PREFIX}/share/wasi-sysroot/VERSION" | cut -d" " -f2 | cut -d"." -f1)
-	local LLVM_MAJOR_VERSION=$(. $TERMUX_SCRIPTDIR/packages/libllvm/build.sh; echo $LLVM_MAJOR_VERSION)
+	local LLVM_MAJOR_VERSION_UPSTREAM
+	LLVM_MAJOR_VERSION_UPSTREAM="$(grep llvm-version "${TERMUX_PREFIX}/share/wasi-sysroot/VERSION" | cut -d" " -f2 | cut -d"." -f1)"
 	echo "INFO: LLVM_MAJOR_VERSION_UPSTREAM = $LLVM_MAJOR_VERSION_UPSTREAM"
-	echo "INFO: LLVM_MAJOR_VERSION          = $LLVM_MAJOR_VERSION"
-	if [[ "${LLVM_MAJOR_VERSION_UPSTREAM}" != "${LLVM_MAJOR_VERSION}" ]]; then
+	echo "INFO: LLVM_MAJOR_VERSION          = $TERMUX_LLVM_MAJOR_VERSION"
+	if [[ "${LLVM_MAJOR_VERSION_UPSTREAM}" != "${TERMUX_LLVM_MAJOR_VERSION}" ]]; then
 		echo "WARN: Version mismatch! Termux clang may not work with wasi-libc sysroot!" 1>&2
 	fi
 }

@@ -27,4 +27,4 @@ effects that this test failing implies would be:
 +  #+(and linux elf sb-thread (not android))
    (let ((s (find-symbol "IMMOBILE-SPACE-OBJ-P" "SB-KERNEL")))
      (when (and s (funcall s #'car)) (exit :code 0))) ; good
-  (exit :code 2) ; otherwise
+   (exit :code 2) ; otherwise

@@ -305,8 +305,8 @@ TERMUX_ANDROID_BUILD_TOOLS_VERSION=33.0.1
 # change TERMUX_PKG_VERSION (and remove TERMUX_PKG_REVISION if necessary) in:
 #   apksigner, d8
 # and trigger rebuild of them
-: "${TERMUX_NDK_VERSION_NUM:="28"}"
-: "${TERMUX_NDK_REVISION:="c"}"
+: "${TERMUX_NDK_VERSION_NUM:="29"}"
+: "${TERMUX_NDK_REVISION:=""}"
 TERMUX_NDK_VERSION="${TERMUX_NDK_VERSION_NUM}${TERMUX_NDK_REVISION}"
 # when changing the above:
 # update version and hashsum in packages
@@ -314,7 +314,7 @@ TERMUX_NDK_VERSION="${TERMUX_NDK_VERSION_NUM}${TERMUX_NDK_REVISION}"
 # and update SHA256 sums in scripts/setup-android-sdk.sh
 # check all packages build and run correctly and bump if needed
 
-: "${TERMUX_HOST_LLVM_MAJOR_VERSION:="19"}"
+: "${TERMUX_HOST_LLVM_MAJOR_VERSION:="20"}"
 : "${TERMUX_HOST_LLVM_BASE_DIR:="/usr/lib/llvm-${TERMUX_HOST_LLVM_MAJOR_VERSION}"}"
 
 : "${TERMUX_JAVA_HOME:=/usr/lib/jvm/java-17-openjdk-amd64}"

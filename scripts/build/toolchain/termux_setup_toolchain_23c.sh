@@ -216,9 +216,6 @@ termux_setup_toolchain_23c() {
 	rm -Rf usr/include/vulkan
 	rm -Rf usr/include/{EGL,GLES{,2,3}}
 
-	sed -i "s/define __ANDROID_API__ __ANDROID_API_FUTURE__/define __ANDROID_API__ $TERMUX_PKG_API_LEVEL/" \
-		usr/include/android/api-level.h
-
 	$TERMUX_ELF_CLEANER --api-level=$TERMUX_PKG_API_LEVEL usr/lib/*/*/*.so | { [[ "${CI-}" == "true" ]] && sed -e '1i\::group::Applying `termux-elf-cleaner`' -e '$a\::endgroup::' || cat; }
 	for dir in usr/lib/*; do
 		# This seem to be needed when building rust
@@ -226,6 +223,6 @@ termux_setup_toolchain_23c() {
 		echo 'INPUT(-lunwind)' > $dir/libgcc.a
 	done
 
-	grep -lrw $_TERMUX_TOOLCHAIN_TMPDIR/sysroot/usr/include/c++/v1 -e '<version>' | xargs -n 1 sed -i 's/<version>/\"version\"/g'
+	grep -lrw $_TERMUX_TOOLCHAIN_TMPDIR/sysroot/usr/include/c++/v1 -e 'include <version>' | xargs -n 1 sed -i 's/include <version>/include \"version\"/g'
 	mv $_TERMUX_TOOLCHAIN_TMPDIR $TERMUX_STANDALONE_TOOLCHAIN
 }

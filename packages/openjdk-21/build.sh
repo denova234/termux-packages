@@ -3,9 +3,11 @@ TERMUX_PKG_DESCRIPTION="Java development kit and runtime"
 TERMUX_PKG_LICENSE="GPL-2.0"
 TERMUX_PKG_MAINTAINER="@termux"
 TERMUX_PKG_VERSION="21.0.9"
+TERMUX_PKG_REVISION=1
 TERMUX_PKG_SRCURL=https://github.com/openjdk/jdk21u/archive/refs/tags/jdk-${TERMUX_PKG_VERSION}-ga.tar.gz
 TERMUX_PKG_SHA256=4ffe05ff839192b01ed53ccd69835f7b5508bee7ca0d5703ac210897065e7ff0
 TERMUX_PKG_AUTO_UPDATE=true
+TERMUX_PKG_UPDATE_VERSION_REGEXP='21\.\d+\.\d+(?=-ga)'
 TERMUX_PKG_DEPENDS="libandroid-shmem, libandroid-spawn, libiconv, libjpeg-turbo, zlib, littlecms, alsa-plugins"
 TERMUX_PKG_BUILD_DEPENDS="cups, fontconfig, libxrandr, libxt, xorgproto, alsa-lib"
 # openjdk-21-x is recommended because X11 separation is still very experimental.
@@ -17,40 +19,16 @@ TERMUX_PKG_HAS_DEBUG=false
 # are automatically enabled for x86, but are not supported for arm.
 __jvm_features="link-time-opt"
 
-termux_pkg_auto_update() {
-	# based on `termux_github_api_get_tag.sh`
-	# fetch newest tags
-	local newest_tags newest_tag
-	newest_tags="$(curl -d "$(cat <<-EOF | tr '\n' ' '
-	{
-		"query": "query {
-			repository(owner: \"openjdk\", name: \"jdk21u\") {
-				refs(refPrefix: \"refs/tags/\", first: 20, orderBy: {
-					field: TAG_COMMIT_DATE, direction: DESC
-				})
-				{ edges { node { name } } }
-			}
-		}"
-	}
-	EOF
-	)" \
-		-H "Authorization: token ${GITHUB_TOKEN}" \
-		-H "Accept: application/vnd.github.v3+json" \
-		--silent \
-		--location \
-		--retry 10 \
-		--retry-delay 1 \
-		https://api.github.com/graphql \
-		| jq '.data.repository.refs.edges[].node.name')"
-	# filter only tags having "-ga" and extract only raw version.
-	read -r newest_tag < <(echo "$newest_tags" | grep -Po '21\.\d+\.\d+(?=-ga)' | sort -Vr)
-
-	[[ -z "${newest_tag}" ]] && termux_error_exit "Unable to get tag from ${TERMUX_PKG_SRCURL}"
-	termux_pkg_upgrade_version "${newest_tag}"
-}
-
 termux_step_pre_configure() {
 	unset JAVA_HOME
+
+	local patch="$TERMUX_PKG_BUILDER_DIR/tmpdir-path-length.diff"
+	local tmpdir_path="$TERMUX_PREFIX/tmp"
+	echo "Applying patch: $(basename "$patch")"
+	test -f "$patch" && sed \
+		-e "s%\@TERMUX_PREFIX\@%${TERMUX_PREFIX}%g" \
+		-e "s%\@TERMUX_TMPDIR_PATH_LENGTH\@%${#tmpdir_path}%g" \
+		"$patch" | patch --silent -p1
 }
 
 termux_step_configure() {

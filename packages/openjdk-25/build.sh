@@ -3,9 +3,11 @@ TERMUX_PKG_DESCRIPTION="Java development kit and runtime"
 TERMUX_PKG_LICENSE="GPL-2.0"
 TERMUX_PKG_MAINTAINER="@termux"
 TERMUX_PKG_VERSION="25.0.1"
+TERMUX_PKG_REVISION=1
 TERMUX_PKG_SRCURL=https://github.com/openjdk/jdk25u/archive/refs/tags/jdk-${TERMUX_PKG_VERSION}-ga.tar.gz
 TERMUX_PKG_SHA256=99864b94b65a9d8e180ec55b8e53a9ab39b0eaebd3ba4438388bf7ea7d5e079a
 TERMUX_PKG_AUTO_UPDATE=true
+TERMUX_PKG_UPDATE_VERSION_REGEXP='25\.\d+\.\d+(?=-ga)'
 TERMUX_PKG_DEPENDS="libandroid-shmem, libandroid-spawn, libiconv, libjpeg-turbo, zlib, littlecms, alsa-plugins"
 TERMUX_PKG_BUILD_DEPENDS="cups, fontconfig, libxrandr, libxt, xorgproto, alsa-lib"
 # openjdk-25-x is recommended because X11 separation is still very experimental.
@@ -24,38 +26,6 @@ TERMUX_PKG_HOSTBUILD=true
 # enable lto
 __jvm_features="link-time-opt"
 
-termux_pkg_auto_update() {
-	# based on `termux_github_api_get_tag.sh`
-	# fetch newest tags
-	local newest_tags newest_tag
-	newest_tags="$(curl -d "$(cat <<-EOF | tr '\n' ' '
-	{
-		"query": "query {
-			repository(owner: \"openjdk\", name: \"jdk25u\") {
-				refs(refPrefix: \"refs/tags/\", first: 20, orderBy: {
-					field: TAG_COMMIT_DATE, direction: DESC
-				})
-				{ edges { node { name } } }
-			}
-		}"
-	}
-	EOF
-	)" \
-		-H "Authorization: token ${GITHUB_TOKEN}" \
-		-H "Accept: application/vnd.github.v3+json" \
-		--silent \
-		--location \
-		--retry 10 \
-		--retry-delay 1 \
-		https://api.github.com/graphql \
-		| jq '.data.repository.refs.edges[].node.name')"
-	# filter only tags having "-ga" and extract only raw version.
-	read -r newest_tag < <(echo "$newest_tags" | grep -Po '25.*?(?=-ga)' | sort -Vr)
-
-	[[ -z "${newest_tag}" ]] && termux_error_exit "ERROR: Unable to get tag from ${TERMUX_PKG_SRCURL}"
-	termux_pkg_upgrade_version "${newest_tag}"
-}
-
 termux_step_host_build() {
 	# precompiled JDK release for GNU/Linux to use as host JDK for bootstrapping
 	# does not need to exactly match the TERMUX_PKG_VERSION
@@ -68,6 +38,24 @@ termux_step_host_build() {
 
 termux_step_pre_configure() {
 	unset JAVA_HOME
+
+	local patch="$TERMUX_PKG_BUILDER_DIR/tmpdir-path-length.diff"
+	local tmpdir_path="$TERMUX_PREFIX/tmp"
+	echo "Applying patch: $(basename "$patch")"
+	test -f "$patch" && sed \
+		-e "s%\@TERMUX_PREFIX\@%${TERMUX_PREFIX}%g" \
+		-e "s%\@TERMUX_TMPDIR_PATH_LENGTH\@%${#tmpdir_path}%g" \
+		"$patch" | patch --silent -p1
+
+	# g1gc causes 'Illegal instruction' on 32-bit ARM after
+	# https://github.com/openjdk/jdk24u/commit/0b467e902d591ae9feeec1669918d1588987cd1c
+	# and LTO causes 'Segmentation fault' on 32-bit ARM after
+	# https://github.com/openjdk/jdk24u/commit/85fedbf668023fd00d70ec649504c2f80e4c84bb
+	# (disabling both commits is necessary,
+	# if either one is disabled alone, respective crash still happens)
+	if [[ "$TERMUX_ARCH" == "arm" ]]; then
+		__jvm_features="-g1gc,-link-time-opt"
+	fi
 }
 
 termux_step_configure() {

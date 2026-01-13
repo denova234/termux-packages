@@ -3,11 +3,11 @@ TERMUX_PKG_DESCRIPTION="Open source implementation of the library requirements o
 TERMUX_PKG_LICENSE="Apache-2.0, NCSA"
 TERMUX_PKG_LICENSE_FILE="libclc/LICENSE.TXT"
 TERMUX_PKG_MAINTAINER="@termux"
-LLVM_MAJOR_VERSION=21
 TERMUX_PKG_VERSION=(
-	${LLVM_MAJOR_VERSION}.1.3
-	${LLVM_MAJOR_VERSION}.1.1
+	21.1.3
+	21.1.1
 )
+TERMUX_PKG_REVISION=1
 TERMUX_PKG_SRCURL=(
 	https://github.com/llvm/llvm-project/releases/download/llvmorg-${TERMUX_PKG_VERSION[0]}/llvm-project-${TERMUX_PKG_VERSION[0]}.src.tar.xz
 	https://github.com/KhronosGroup/SPIRV-LLVM-Translator/archive/refs/tags/v${TERMUX_PKG_VERSION[1]}.tar.gz

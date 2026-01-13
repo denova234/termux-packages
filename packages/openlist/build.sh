@@ -2,15 +2,15 @@ TERMUX_PKG_HOMEPAGE=https://oplist.org/
 TERMUX_PKG_DESCRIPTION="A file list program that supports multiple storage"
 TERMUX_PKG_LICENSE="AGPL-V3"
 TERMUX_PKG_MAINTAINER="2096779623 <admin@utermux.dev>"
-TERMUX_PKG_VERSION="4.1.6"
-_OPENLIST_WEB_VERSION="4.1.6"
+TERMUX_PKG_VERSION="4.1.9"
+_OPENLIST_WEB_VERSION="4.1.9"
 TERMUX_PKG_SRCURL=(
-	https://github.com/OpenListTeam/OpenList/archive/v${TERMUX_PKG_VERSION}.tar.gz
+	https://github.com/OpenListTeam/OpenList/archive/refs/tags/v${TERMUX_PKG_VERSION}.tar.gz
 	https://github.com/OpenListTeam/OpenList-Frontend/releases/download/v${_OPENLIST_WEB_VERSION}/openlist-frontend-dist-v${_OPENLIST_WEB_VERSION}.tar.gz
 )
 TERMUX_PKG_SHA256=(
-	9cb26d5a41a9df56a6c937bc37a572ff104e2d5a72c0ec8813273f2e67c0a092
-	0f9933449040e1253f04d4ed79aa62783a5d817c884495b63f99c7207012d1b8
+	5171cef3b03f6b68af0e4886af7b6f5a6f9c103de41c3b831f46dcb3ddcc6f18
+	03e9c57d614ee338441d38fa27af1435f34b2c508ce57e0bd75b91b24d934aec
 )
 TERMUX_PKG_AUTO_UPDATE=true
 TERMUX_PKG_BUILD_IN_SRC=true
@@ -34,6 +34,11 @@ termux_pkg_auto_update() {
 		return
 	fi
 
+	if [[ "${BUILD_PACKAGES}" == "false" ]]; then
+		echo "INFO: package needs to be updated to ${latest_tag}."
+		return
+	fi
+
 	local tmpdir
 	tmpdir="$(mktemp -d)"
 	curl -sLo "${tmpdir}/openlist-linux-amd64.tar.gz" "https://github.com/OpenListTeam/OpenList/releases/download/v${latest_tag}/openlist-linux-amd64.tar.gz"
@@ -41,7 +46,7 @@ termux_pkg_auto_update() {
 	chmod +x "${tmpdir}/openlist"
 	local latest_web_version="$("${tmpdir}"/openlist version | grep "WebVersion:" | cut -d ' ' -f 2 | sed 's/^v//')"
 
-	curl -sLo "${tmpdir}/src" "https://github.com/OpenListTeam/OpenList/archive/v${latest_tag}.tar.gz"
+	curl -sLo "${tmpdir}/src" "https://github.com/OpenListTeam/OpenList/archive/refs/tags/v${latest_tag}.tar.gz"
 	curl -sLo "${tmpdir}/web" "https://github.com/OpenListTeam/OpenList-Frontend/releases/download/v${latest_web_version}/openlist-frontend-dist-v${latest_web_version}.tar.gz"
 	local -a sha=(
 		"$(sha256sum "${tmpdir}/src" | cut -d ' ' -f 1)"

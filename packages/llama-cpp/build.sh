@@ -2,11 +2,11 @@ TERMUX_PKG_HOMEPAGE=https://github.com/ggml-org/llama.cpp
 TERMUX_PKG_DESCRIPTION="LLM inference in C/C++"
 TERMUX_PKG_LICENSE="MIT"
 TERMUX_PKG_MAINTAINER=@termux
-TERMUX_PKG_VERSION="0.0.0-b6933"
+TERMUX_PKG_VERSION="0.0.0-b7622"
 TERMUX_PKG_SRCURL=https://github.com/ggml-org/llama.cpp/archive/refs/tags/${TERMUX_PKG_VERSION#*-}.tar.gz
-TERMUX_PKG_SHA256=0206d3b2c6c5ef42a19788034012143433162127e15d637344be8ece9283134f
+TERMUX_PKG_SHA256=7ec12a554a017ffbf3bea16f54e6f71831d6cd4f8f25d4273cde2de2dae9d6b5
 TERMUX_PKG_AUTO_UPDATE=true
-TERMUX_PKG_DEPENDS="libc++, libcurl"
+TERMUX_PKG_DEPENDS="libandroid-spawn, libc++, libcurl"
 TERMUX_PKG_BUILD_DEPENDS="vulkan-headers, opencl-headers, ocl-icd"
 TERMUX_PKG_SUGGESTS="llama-cpp-backend-vulkan, llama-cpp-backend-opencl"
 TERMUX_PKG_EXTRA_CONFIGURE_ARGS="
@@ -24,7 +24,43 @@ TERMUX_PKG_EXTRA_CONFIGURE_ARGS="
 # XXX: I don't think it will work if we simply casting it.
 TERMUX_PKG_EXCLUDED_ARCHES="arm, i686"
 
+# This auto update function throttles the update frequency
+# of the package to set `$update_interval`, this is useful
+# for packages that make very frequent tags like `jackett`
+# or `llama-cpp` to not spam the commit history, CI and repos.
 termux_pkg_auto_update() {
+	local origin_url last_autoupdate
+	# Throttle auto updates to once every 2 weeks.
+	local update_interval="$((14 * 86400))"
+
+	# Get the git history
+	if origin_url="$(git config --get remote.origin.url)"; then
+		git fetch --quiet "${origin_url}" || {
+			echo "WARN: Unable to fetch '${origin_url}'"
+			echo "WARN: Skipping auto update for '$TERMUX_PKG_NAME'"
+			return
+		}
+	fi
+
+	# When was `llama-cpp` last autoupdated? (Unix epoch timestamp)
+	last_autoupdate="$(
+		git log \
+		--author="Termux Github Actions <contact@termux.dev>" \
+		-n1 \
+		--pretty=format:%at \
+		-- "$TERMUX_PKG_BUILDER_DIR/build.sh"
+	)"
+
+
+	if (( last_autoupdate > EPOCHSECONDS - update_interval )); then
+		local t days hrs mins secs
+		(( t = EPOCHSECONDS - last_autoupdate, days = t/86400, t %= 86400, secs= t%60, t /= 60, mins = t%60, hrs = t/60 ))
+
+		printf 'INFO: Last updated %dd%dh%02dm%02ds ago.\n' "$days" "$hrs" "$mins" "$secs"
+		printf 'INFO: Which is less than the desired %sd minimum update interval.\n' "$(( update_interval / 86400 ))"
+		return
+	fi
+
 	local latest_tag
 	latest_tag="$(
 		termux_github_api_get_tag "${TERMUX_PKG_SRCURL}" "${TERMUX_PKG_UPDATE_TAG_TYPE}"
@@ -38,6 +74,7 @@ termux_pkg_auto_update() {
 
 termux_step_pre_configure() {
 	export PATH="$NDK/shader-tools/linux-x86_64:$PATH"
+	LDFLAGS+=" -landroid-spawn"
 
 	local _libvulkan=vulkan
 	if [[ "${TERMUX_ON_DEVICE_BUILD}" == "false" && "${TERMUX_PKG_API_LEVEL}" -lt 28 ]]; then
