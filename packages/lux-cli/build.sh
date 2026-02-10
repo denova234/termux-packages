@@ -1,10 +1,11 @@
-TERMUX_PKG_HOMEPAGE=https://nvim-neorocks.github.io/
+TERMUX_PKG_HOMEPAGE=https://lux.lumen-labs.org
 TERMUX_PKG_DESCRIPTION="A package manager for Lua, similar to luarocks"
 TERMUX_PKG_LICENSE="LGPL-3.0-or-later"
 TERMUX_PKG_MAINTAINER="@termux"
-TERMUX_PKG_VERSION="0.22.4"
-TERMUX_PKG_SRCURL="https://github.com/nvim-neorocks/lux/archive/refs/tags/v${TERMUX_PKG_VERSION}.tar.gz"
-TERMUX_PKG_SHA256=e34ffabb0e6986df0d5faaa7f1c956be06c5fafc23c1ba098fc2f78d777fc47d
+TERMUX_PKG_VERSION="0.25.2"
+TERMUX_PKG_REVISION=1
+TERMUX_PKG_SRCURL="https://github.com/lumen-oss/lux/archive/refs/tags/v${TERMUX_PKG_VERSION}.tar.gz"
+TERMUX_PKG_SHA256=9b9b9ad11f22bf666ec48092126a352d752cd16c579e7713fdcb8da3a215fc5a
 TERMUX_PKG_DEPENDS="bzip2, gpgme, libgit2, libgpg-error, lua54, openssl, xz-utils"
 TERMUX_PKG_PROVIDES="lx"
 TERMUX_PKG_AUTO_UPDATE=true
@@ -18,7 +19,7 @@ termux_pkg_auto_update() {
 	newest_tags="$(curl -d "$(cat <<-EOF | tr '\n' ' '
 	{
 		"query": "query {
-			repository(owner: \"nvim-neorocks\", name: \"lux\") {
+			repository(owner: \"lumen-oss\", name: \"lux\") {
 				refs(refPrefix: \"refs/tags/\", first: 20, orderBy: {
 					field: TAG_COMMIT_DATE, direction: DESC
 				})
@@ -48,25 +49,25 @@ termux_step_host_build() {
 		return
 	fi
 
-	local ubuntu_packages
-
 	# libgpgme-dev and any dependencies that aren't in the ubuntu builder at time of writing
-	ubuntu_packages+="dirmngr,"
-	ubuntu_packages+="gnupg,"
-	ubuntu_packages+="gnupg-l10n,"
-	ubuntu_packages+="gnupg-utils,"
-	ubuntu_packages+="gpg,"
-	ubuntu_packages+="gpg-agent,"
-	ubuntu_packages+="gpg-wks-client,"
-	ubuntu_packages+="gpgconf,"
-	ubuntu_packages+="gpgsm,"
-	ubuntu_packages+="gpgv,"
-	ubuntu_packages+="keyboxd,"
-	ubuntu_packages+="libassuan-dev,"
-	ubuntu_packages+="libgpgme-dev,"
-	ubuntu_packages+="libgpgme11t64,"
+	local -a ubuntu_packages=(
+		"dirmngr"
+		"gnupg"
+		"gnupg-l10n"
+		"gnupg-utils"
+		"gpg"
+		"gpg-agent"
+		"gpg-wks-client"
+		"gpgconf"
+		"gpgsm"
+		"gpgv"
+		"keyboxd"
+		"libassuan-dev"
+		"libgpgme-dev"
+		"libgpgme11t64"
+	)
 
-	termux_download_ubuntu_packages "$ubuntu_packages"
+	termux_download_ubuntu_packages "${ubuntu_packages[@]}"
 
 	PKG_CONFIG_PATH_x86_64_unknown_linux_gnu="${TERMUX_PKG_HOSTBUILD_DIR}/ubuntu_packages/usr/lib/x86_64-linux-gnu/pkgconfig"
 	RUSTFLAGS="-L${TERMUX_PKG_HOSTBUILD_DIR}/ubuntu_packages/usr/lib/x86_64-linux-gnu"
@@ -91,7 +92,7 @@ termux_step_host_build() {
 
 termux_step_pre_configure() {
 	# software does not officially support cross-compilation, but for some reason, it appears to work anyway
-	# https://github.com/nvim-neorocks/lux/blob/c794f476cb459df5bcb6e971c0c6f76e6a2a4dd4/lux-lib/src/lua_rockspec/platform.rs#L72
+	# https://github.com/lumen-oss/lux/blob/c794f476cb459df5bcb6e971c0c6f76e6a2a4dd4/lux-lib/src/lua_rockspec/platform.rs#L72
 	if [[ "$TERMUX_ON_DEVICE_BUILD" == "false" ]]; then
 		echo "WARNING: $TERMUX_PKG_NAME's upstream project does not officially support cross-compilation!"
 	fi
@@ -107,11 +108,6 @@ termux_step_pre_configure() {
 	fi
 
 	cargo fetch --locked --target "$CARGO_TARGET_NAME"
-
-	# software does not officially support android, so treat android as linux
-	find "$TERMUX_PKG_SRCDIR" -type f | \
-		xargs -n 1 sed -i \
-		-e 's|target_os = "linux"|target_os = "android"|g'
 }
 
 termux_step_make() {
