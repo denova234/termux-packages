@@ -8,7 +8,7 @@
 set -e -u
 
 ARCH="x86_64"
-REPO_URL="https://service.termux-pacman.dev/cgct/${ARCH}"
+REPO_URL="https://sync.termux-pacman.dev/cgct/${ARCH}"
 
 if [ "$ARCH" != "$(uname -m)" ]; then
 	echo "Error: the requested CGCT is not supported on your architecture"
@@ -16,10 +16,10 @@ if [ "$ARCH" != "$(uname -m)" ]; then
 fi
 
 declare -A CGCT=(
-	["cbt"]="2.45.1-0" # Cross Binutils for Termux
-	["cgt"]="15.2.0-0" # Cross GCCs for Termux
-	["glibc-cgct"]="2.42-0" # Glibc for CGCT
- 	["cgct-headers"]="6.18.6-0" # Headers for CGCT
+	["cbt"]="2.46.1-0" # Cross Binutils for Termux
+	["cgt"]="16.1.0-0" # Cross GCCs for Termux
+	["glibc-cgct"]="2.43-0" # Glibc for CGCT
+ 	["cgct-headers"]="7.1-0" # Headers for CGCT
 )
 
 : "${TERMUX_PKG_TMPDIR:="/tmp"}"

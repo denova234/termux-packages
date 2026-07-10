@@ -2,9 +2,9 @@ TERMUX_PKG_HOMEPAGE=https://deno.land/
 TERMUX_PKG_DESCRIPTION="A modern runtime for JavaScript and TypeScript"
 TERMUX_PKG_LICENSE="MIT"
 TERMUX_PKG_MAINTAINER="@licy183"
-TERMUX_PKG_VERSION="1:2.6.8"
+TERMUX_PKG_VERSION="1:2.9.2"
 TERMUX_PKG_SRCURL=https://github.com/denoland/deno/releases/download/v${TERMUX_PKG_VERSION:2}/deno_src.tar.gz
-TERMUX_PKG_SHA256=61fab2832c0fd946ba40196df267d0f10cb5fc7ac375ca50d95cd463ecb775b2
+TERMUX_PKG_SHA256=c1bbd632c2384a13be4ef8fd274649e80cd3ca5ba6b6e669e22d3743edd35dac
 TERMUX_PKG_DEPENDS="libandroid-stub, libffi, libsqlite, zlib"
 TERMUX_PKG_BUILD_DEPENDS="aosp-libs"
 TERMUX_PKG_BUILD_IN_SRC=true
@@ -22,6 +22,14 @@ termux_step_get_source() {
 	termux_download "${TERMUX_PKG_SRCURL}" "$file" "${TERMUX_PKG_SHA256}"
 	mkdir -p "$TERMUX_PKG_SRCDIR"
 	tar xf "$file" -C "$TERMUX_PKG_SRCDIR" --strip-components=1
+}
+
+termux_step_post_get_source() {
+	# Use default-features in `libz-sys`
+	sed -i '/^libz-sys *=/ s/, *default-features *= *false//' Cargo.toml
+
+	# Remove "bundled" feature in `rusqlite`
+	sed -i '/^rusqlite.*features/ s/"bundled", \?//' Cargo.toml
 }
 
 termux_step_pre_configure() {
@@ -121,6 +129,7 @@ use_jumbo_build=true
 	export "$env_name"="$BINDGEN_EXTRA_CLANG_ARGS"
 
 	export V8_FROM_SOURCE=1
+	export CARGO_FEATURE_SIMDUTF=1
 	# TODO: How to track the output of v8's build.rs without passing `-vv`
 	cargo build --jobs "${TERMUX_PKG_MAKE_PROCESSES}" --target "${CARGO_TARGET_NAME}" --release
 
@@ -208,8 +217,10 @@ termux_step_make() {
 	fi
 
 	local _release_opt="--release"
+	local _folder="release"
 	if [ "$TERMUX_DEBUG_BUILD" = "true" ]; then
 		_release_opt=
+		_folder="debug"
 	fi
 
 	# Prepare source to build cli snapshot generator
@@ -234,7 +245,7 @@ termux_step_make() {
 	termux_setup_proot
 	termux-proot-run env LD_PRELOAD= LD_LIBRARY_PATH= \
 		OUT_DIR="$_deno_prebuilt_snapshot_dir" TARGET="$CARGO_TARGET_NAME" \
-		"$TERMUX_PKG_SRCDIR"/target/$CARGO_TARGET_NAME/release/deno_snapshots
+		"$TERMUX_PKG_SRCDIR"/target/$CARGO_TARGET_NAME/$_folder/deno_snapshots
 
 	# Recover source
 	rm -rf "$TERMUX_PKG_SRCDIR"/cli/snapshot/*

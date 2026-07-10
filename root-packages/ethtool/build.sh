@@ -2,9 +2,12 @@ TERMUX_PKG_HOMEPAGE=https://mirrors.edge.kernel.org/pub/software/network/ethtool
 TERMUX_PKG_DESCRIPTION="standard Linux utility for controlling network drivers and hardware, particularly for wired Ethernet devices"
 TERMUX_PKG_LICENSE="GPL-2.0"
 TERMUX_PKG_MAINTAINER="@termux"
-TERMUX_PKG_VERSION="6.15"
-TERMUX_PKG_REVISION=1
-TERMUX_PKG_SRCURL=https://mirrors.edge.kernel.org/pub/software/network/ethtool/ethtool-${TERMUX_PKG_VERSION}.tar.xz
-TERMUX_PKG_SHA256=9477c365114d910120aaec5336a1d16196c833d8486f7c6da67bedef57880ade
+TERMUX_PKG_VERSION="7.1"
+TERMUX_PKG_SRCURL="https://git.kernel.org/pub/scm/network/ethtool/ethtool.git/snapshot/ethtool-$TERMUX_PKG_VERSION.tar.gz"
+TERMUX_PKG_SHA256=a9828b70956d3c6c042cf9d4ad477b1efb851e72579f78a31545dcf5133beea5
 TERMUX_PKG_AUTO_UPDATE=true
 TERMUX_PKG_DEPENDS="libmnl"
+
+termux_step_pre_configure() {
+	autoreconf -fi
+}
