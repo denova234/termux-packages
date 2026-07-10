@@ -371,7 +371,7 @@ fi
 #
 # Default value: `Termux`
 ##
-TERMUX__NAME="NovaIDE"
+TERMUX__NAME="Ampersand"
 
 ##
 # The lower case value for `TERMUX__NAME`.
@@ -402,7 +402,7 @@ TERMUX__UNAME="${TERMUX__NAME^^}"
 #
 # Default value: `termux`
 ##
-TERMUX__INTERNAL_NAME="novaide"
+TERMUX__INTERNAL_NAME="ampersand"
 
 ##
 # The regex to validate `TERMUX__INTERNAL_NAME`.
@@ -436,7 +436,7 @@ TERMUX__INTERNAL_NAME___MAX_LEN=7
 #
 # Default value: `termux`
 ##
-TERMUX__REPOS_HOST_ORG_NAME="novaide"
+TERMUX__REPOS_HOST_ORG_NAME="ampersand"
 
 ##
 # Termux repositories host organization url.
@@ -464,7 +464,7 @@ TERMUX__REPOS_HOST_ORG_URL="https://github.com/$TERMUX__REPOS_HOST_ORG_NAME"
 #
 # Default value: `com.termux`
 ##
-TERMUX_APP__PACKAGE_NAME="my.novaide"
+TERMUX_APP__PACKAGE_NAME="nova.ampersand.ide"
 TERMUX_APP_PACKAGE="$TERMUX_APP__PACKAGE_NAME" # Deprecated alternative variable for `TERMUX_APP__PACKAGE_NAME`
 
 __termux_build_props__add_variables_validator_actions "TERMUX_APP__PACKAGE_NAME" "app_package_name"
@@ -1816,7 +1816,7 @@ TERMUX_APP__LNAME="${TERMUX_APP__NAME,,}"
 # Validation regex: `TERMUX__APPS_APP_IDENTIFIER_REGEX`
 # Max length: `TERMUX__APPS_APP_IDENTIFIER___MAX_LEN`
 ##
-TERMUX_APP__APP_IDENTIFIER="novaide"
+TERMUX_APP__APP_IDENTIFIER="ampersand"
 
 
 
@@ -1966,7 +1966,7 @@ __termux_build_props__add_variables_validator_actions "TERMUX_APP__AM_SOCKET__SE
 #
 # Default value: `com.termux.api`
 ##
-TERMUX_API_APP__PACKAGE_NAME="my.novaide.api"
+TERMUX_API_APP__PACKAGE_NAME="nova.ampersand.ide.api"
 
 __termux_build_props__add_variables_validator_actions "TERMUX_API_APP__PACKAGE_NAME" "app_package_name"
 
@@ -2018,7 +2018,7 @@ TERMUX_API_APP__REPO_URL="$TERMUX__REPOS_HOST_ORG_URL/$TERMUX_API_APP__REPO_NAME
 #
 # Default value: `com.termux.api`
 ##
-TERMUX_API_APP__NAMESPACE="my.novaide.api"
+TERMUX_API_APP__NAMESPACE="nova.ampersand.ide.api"
 
 __termux_build_props__add_variables_validator_actions "TERMUX_API_APP__NAMESPACE" "app_package_name"
 
@@ -2180,13 +2180,13 @@ TERMUX_AM_APP__AM_CLASS__CLASS_NAME="$TERMUX_AM_APP__NAMESPACE.Am"
 # and are compiled locally.
 # FIXME: Checking for all variables will be added later in repo
 # changes pull, currently only `TERMUX_REPO_APP__PACKAGE_NAME` is checked.
-TERMUX_REPO_APP__PACKAGE_NAME="my.novaide"
-TERMUX_REPO_APP__DATA_DIR="/data/data/my.novaide"
-TERMUX_REPO__CORE_DIR="/data/data/my.novaide/termux/core"
-TERMUX_REPO__APPS_DIR="/data/data/my.novaide/termux/app"
-TERMUX_REPO__ROOTFS="/data/data/my.novaide/files"
-TERMUX_REPO__HOME="/data/data/my.novaide/files/home"
-TERMUX_REPO__PREFIX="/data/data/my.novaide/files/usr"
+TERMUX_REPO_APP__PACKAGE_NAME="nova.ampersand.ide"
+TERMUX_REPO_APP__DATA_DIR="/data/data/nova.ampersand.ide"
+TERMUX_REPO__CORE_DIR="/data/data/nova.ampersand.ide/termux/core"
+TERMUX_REPO__APPS_DIR="/data/data/nova.ampersand.ide/termux/app"
+TERMUX_REPO__ROOTFS="/data/data/nova.ampersand.ide/files"
+TERMUX_REPO__HOME="/data/data/nova.ampersand.ide/files/home"
+TERMUX_REPO__PREFIX="/data/data/nova.ampersand.ide/files/usr"
 
 
 
@@ -2231,10 +2231,10 @@ TERMUX_CLEANUP_BUILT_PACKAGES_THRESHOLD="$(( 5 * 1024 ** 3 ))" # 5 GiB
 __termux_build_props__add_variables_validator_actions "TERMUX_CLEANUP_BUILT_PACKAGES_THRESHOLD" "unsigned_int"
 
 # Path to CGCT tools
-CGCT_DEFAULT_PREFIX="/data/data/my.novaide/files/usr/glibc"
+CGCT_DEFAULT_PREFIX="/data/data/nova.ampersand.ide/files/usr/glibc"
 __termux_build_props__add_variables_validator_actions "CGCT_DEFAULT_PREFIX" "safe_absolute_path invalid_termux_prefix_paths"
 
-export CGCT_DIR="/data/data/my.novaide/cgct"
+export CGCT_DIR="/data/data/nova.ampersand.ide/cgct"
 __termux_build_props__add_variables_validator_actions "CGCT_DIR" "safe_absolute_path invalid_termux_prefix_paths"
 
 # Allow to override setup.
