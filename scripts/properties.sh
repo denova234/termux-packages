@@ -402,7 +402,7 @@ TERMUX__UNAME="${TERMUX__NAME^^}"
 #
 # Default value: `termux`
 ##
-TERMUX__INTERNAL_NAME="ampersand"
+TERMUX__INTERNAL_NAME="ampers"
 
 ##
 # The regex to validate `TERMUX__INTERNAL_NAME`.
